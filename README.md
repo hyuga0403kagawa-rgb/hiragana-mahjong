@@ -23,13 +23,17 @@ npm start
 ```
 → http://localhost:8737 。全モードが動く。
 
-### 2. インターネットに一時公開する (Windows)
-`オンライン公開.bat` をダブルクリック。ゲームサーバとCloudflare Quick Tunnelが起動し、
-公開URL (`https://○○.trycloudflare.com`) が表示され、クリップボードにコピーされる。
+### 2. インターネットに公開する (Windows・自動復旧つき)
+`オンライン公開.bat` をダブルクリック → **見張り番** (`tools/keep-online.ps1`) が常駐し、
+サーバとCloudflareトンネルを60秒ごとに死活監視して、落ちていたら自動で立て直す。
+現在の公開URLが表示され、クリップボードにコピーされる。
 
-> **このURLは毎回変わり、PCの電源が入っている間だけ有効。**
-> 最新のURLは `tools/public-url.txt` に保存される。
-> 固定URLで24時間公開したい場合は [DEPLOY.md](DEPLOY.md)。
+- 見張り番は**PCログイン時に自動起動**する (スタートアップ登録済み。
+  やめたいときは `shell:startup` フォルダの「ひらがな麻雀オンライン見張り番」を削除)
+- トンネルが失効すると**URLが変わる**。最新URLは常に `tools/public-url.txt`
+  (張り直しの履歴は `tools/keep-online.log`)
+- PCがスリープ/シャットダウン中は止まる。**固定URLで24時間公開したい場合は [DEPLOY.md](DEPLOY.md)**
+  (git リポジトリ・`render.yaml` は準備済み。GitHub/Renderのアカウント作成だけ必要)
 
 ### モード別の必要環境
 | モード | サーバ | 内容 |

@@ -1,4 +1,4 @@
-# ひらがな麻雀 公開サーバ起動スクリプト
+﻿# ひらがな麻雀 公開サーバ起動スクリプト
 # ゲームサーバ + Cloudflare Quick Tunnel を起動し、公開URLを表示する。
 $root = Split-Path $PSScriptRoot -Parent
 Set-Location $root

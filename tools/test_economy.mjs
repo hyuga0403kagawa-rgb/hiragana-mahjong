@@ -1,7 +1,9 @@
 // 経済システムのテスト: node tools/test_economy.mjs
 import {
   TILE_THEMES, HINT_PACK, COIN_PACKS, AD_FREE_ITEM, AD_REWARD, AD_REWARD_DAILY_LIMIT,
+  SFX_PACKS, BGM_SETS,
   loadEconomy, saveEconomy, buyItem, buyCoinPack, buyAdFree, equipTile, useHint, grantReward,
+  equipSfx, equipBgm,
   adRewardsLeft, watchAdReward, shouldShowGameEndAd,
 } from "../src/economy.js";
 
@@ -52,6 +54,28 @@ r = grantReward(eco, 0);
 ok(r.reward === 40, "1位は+40");
 ok(grantReward(eco, 3).reward === 5, "4位は+5");
 eco = r.eco;
+
+// 効果音パック・BGMセット
+ok(loadEconomy({ getItem: () => null, setItem: () => {} }).sfxPack === "tsuchi", "初期の効果音はつち");
+ok(loadEconomy({ getItem: () => null, setItem: () => {} }).bgmSet === "yoru", "初期のBGMは夜の卓");
+eco = { ...eco, coins: 1000 };
+const marimo = SFX_PACKS.find(p => p.id === "marimo");
+r = buyItem(eco, marimo);
+ok(r.ok && r.eco.ownedSfx.includes("marimo") && r.eco.coins === 600, "効果音パック購入で減額+所持");
+eco = equipSfx(r.eco, "marimo");
+ok(eco.sfxPack === "marimo", "購入した効果音パックを装備できる");
+ok(equipSfx(eco, "denshi").sfxPack === "marimo", "未購入の効果音パックは装備できない");
+ok(buyItem(eco, marimo).ok === false, "効果音パックの二重購入不可");
+const matsuri = BGM_SETS.find(p => p.id === "matsuri");
+r = buyItem(eco, matsuri);
+ok(r.ok && r.eco.ownedBgm.includes("matsuri") && r.eco.coins === 100, "BGMセット購入で減額+所持");
+eco = equipBgm(r.eco, "matsuri");
+ok(eco.bgmSet === "matsuri", "購入したBGMセットを装備できる");
+ok(equipBgm(eco, "yuki").bgmSet === "matsuri", "未購入のBGMセットは装備できない");
+// 旧データ (音のフィールドなし) を読み込んでもデフォルトが補完される
+const oldData = JSON.stringify({ coins: 50, hints: 1, ownedTiles: ["ivory"], ownedTables: ["ai"], tileTheme: "ivory", tableTheme: "ai" });
+const migrated = loadEconomy({ getItem: () => oldData, setItem: () => {} });
+ok(migrated.sfxPack === "tsuchi" && migrated.ownedBgm.includes("yoru"), "既存セーブに音フィールドが補完される");
 
 // 広告
 const today = "2026-08-14";

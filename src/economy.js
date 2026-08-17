@@ -15,6 +15,16 @@ export const TABLE_THEMES = [
   { id: "akane", name: "茜空", desc: "夕暮れ色の卓", price: 300 },
 ];
 export const HINT_PACK = { id: "hint5", name: "ヒント券 ×5", desc: "フリー対戦で完成していることばを表示 (ランク戦・ともだち対戦では使えません)", price: 100, amount: 5 };
+export const SFX_PACKS = [
+  { id: "tsuchi", name: "つちの音", desc: "きほんの牌と木の音", price: 0 },
+  { id: "marimo", name: "まりもの音", desc: "まるくてやわらかい水の音", price: 400 },
+  { id: "denshi", name: "でんしの音", desc: "レトロゲーム風のピコピコ音", price: 400 },
+];
+export const BGM_SETS = [
+  { id: "yoru", name: "夜の卓", desc: "しずかな琴のしらべ (ロビー/対局)", price: 0 },
+  { id: "matsuri", name: "祭ばやし", desc: "太鼓と笛のにぎやかな調子", price: 500 },
+  { id: "yuki", name: "雪あかり", desc: "鈴の音がひびく静寂", price: 500 },
+];
 // 広告なしはコインでは買えない課金(実決済)専用アイテム。現状はデモ決済。
 export const AD_FREE_ITEM = { id: "adfree", name: "広告なし", desc: "起動時・対局後の広告を出さない (「広告でコインGET」は残ります)", demoPrice: "¥480" };
 export const AD_REWARD = 30;              // 広告視聴1回の報酬
@@ -41,6 +51,10 @@ const DEFAULTS = {
   adDay: "",                       // 報酬広告のカウント日 (YYYY-MM-DD)
   adCount: 0,                      // その日の視聴回数
   gamesSinceAd: 0,                 // 対局後広告の間隔管理
+  ownedSfx: ["tsuchi"],
+  ownedBgm: ["yoru"],
+  sfxPack: "tsuchi",
+  bgmSet: "yoru",
 };
 
 export function loadEconomy(storage = safeStorage) {
@@ -68,6 +82,12 @@ export function buyItem(eco, item) {
     next.ownedTables = [...eco.ownedTables, item.id];
   } else if (item.id === HINT_PACK.id) {
     next.hints = eco.hints + HINT_PACK.amount;
+  } else if (SFX_PACKS.some(t => t.id === item.id)) {
+    if (eco.ownedSfx.includes(item.id)) return { ok: false, eco, reason: "購入済みです" };
+    next.ownedSfx = [...eco.ownedSfx, item.id];
+  } else if (BGM_SETS.some(t => t.id === item.id)) {
+    if (eco.ownedBgm.includes(item.id)) return { ok: false, eco, reason: "購入済みです" };
+    next.ownedBgm = [...eco.ownedBgm, item.id];
   } else {
     return { ok: false, eco, reason: "不明な商品です" };
   }
@@ -92,6 +112,14 @@ export function equipTile(eco, id) {
 export function equipTable(eco, id) {
   if (!eco.ownedTables.includes(id)) return eco;
   return { ...eco, tableTheme: id };
+}
+export function equipSfx(eco, id) {
+  if (!eco.ownedSfx.includes(id)) return eco;
+  return { ...eco, sfxPack: id };
+}
+export function equipBgm(eco, id) {
+  if (!eco.ownedBgm.includes(id)) return eco;
+  return { ...eco, bgmSet: id };
 }
 export function useHint(eco) {
   if (eco.hints <= 0) return { ok: false, eco };

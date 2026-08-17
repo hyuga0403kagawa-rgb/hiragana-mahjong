@@ -11,10 +11,15 @@ import { RANKS, RP_PER_RANK, RP_BY_PLACE, loadRank, saveRank, applyResult } from
 import { NetClient } from "./net.js";
 import {
   TILE_THEMES, TABLE_THEMES, HINT_PACK, COIN_PACKS, AD_FREE_ITEM, AD_REWARD,
-  loadEconomy, saveEconomy, buyItem, buyCoinPack, buyAdFree, equipTile, equipTable, useHint, grantReward,
+  SFX_PACKS as ECO_SFX, BGM_SETS as ECO_BGM,
+  loadEconomy, saveEconomy, buyItem, buyCoinPack, buyAdFree, equipTile, equipTable,
+  equipSfx, equipBgm, useHint, grantReward,
   adRewardsLeft, watchAdReward, shouldShowGameEndAd,
 } from "./economy.js";
-import { play as playSfx, isMuted, toggleMute } from "./sound.js";
+import {
+  play as playSfx, isMuted, toggleMute,
+  setSfxPack, setBgmSet, playBgm, currentBgm, auditionSfx, auditionBgm, unlockAudio,
+} from "./sound.js";
 import {
   NEW_WORD_COIN, loadCollection, saveCollection, recordWords, collectionStats, groupByRow,
 } from "./collection.js";
@@ -50,6 +55,8 @@ window.__dbg = { dict, get game() { return game; }, get view() { return currentV
 function applyThemes() {
   document.body.dataset.tileTheme = eco.tileTheme;
   document.body.dataset.tableTheme = eco.tableTheme;
+  setSfxPack(eco.sfxPack);
+  setBgmSet(eco.bgmSet);
 }
 function updateEcoBadges() {
   $("title-coins").textContent = `🪙 ${eco.coins}`;
@@ -215,6 +222,9 @@ function refreshMuteBtn() {
 }
 $("btn-mute").onclick = () => { toggleMute(); refreshMuteBtn(); playSfx("tap"); };
 refreshMuteBtn();
+// BGM開始 (音が実際に出るのは最初のタップ以降 = ブラウザの自動再生制限)
+playBgm("lobby");
+document.addEventListener("pointerdown", () => unlockAudio(), { once: true });
 // 起動時: 初回だけ「あそびかた」を表示。それ以外は起動広告 (「広告なし」購入済みなら出ない)
 setTimeout(async () => {
   const introShown = await maybeShowFirstIntro();
@@ -225,6 +235,8 @@ setTimeout(async () => {
 function showScreen(id) {
   document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
   $(id).classList.add("active");
+  // BGM: 対局中は battle、それ以外 (タイトル・ロビー・ショップ等) は lobby
+  playBgm(id === "screen-game" ? "battle" : "lobby");
 }
 let rulesReturn = "screen-title";
 
@@ -480,6 +492,55 @@ function renderShop() {
     async () => { await watchRewardedAd(); renderShop(); },
     adRewardsLeft(eco, todayStr()) <= 0,
   ));
+
+  // おと: 効果音パックとBGMセット (試聴つき)
+  const audioRow = (box, item, icon, owned, equipped, onAudition, onMain) => {
+    const d = document.createElement("div");
+    d.className = "shop-item";
+    d.innerHTML = `<span class="si-preview">${icon}</span>
+      <span class="si-body"><div class="si-name">${esc(item.name)}</div><div class="si-desc">${esc(item.desc)}</div></span>`;
+    const listen = document.createElement("button");
+    listen.textContent = "♪試聴";
+    listen.onclick = onAudition;
+    d.appendChild(listen);
+    const b = document.createElement("button");
+    b.textContent = equipped ? "装備中" : owned ? "装備する" : `🪙${item.price}`;
+    b.className = equipped ? "equipped" : owned ? "equip" : "";
+    b.disabled = equipped;
+    b.onclick = onMain;
+    d.appendChild(b);
+    box.appendChild(d);
+  };
+  const sfxBox = $("shop-sfx");
+  sfxBox.innerHTML = "";
+  for (const p of ECO_SFX) {
+    const owned = eco.ownedSfx.includes(p.id);
+    const equipped = eco.sfxPack === p.id;
+    audioRow(sfxBox, p, "🔔", owned, equipped, () => auditionSfx(p.id), () => {
+      if (equipped) return;
+      if (owned) { setEco(equipSfx(eco, p.id)); playSfx("tap"); renderShop(); return; }
+      const r = buyItem(eco, p);
+      if (!r.ok) { shopToast(r.reason); return; }
+      setEco(equipSfx(r.eco, p.id));
+      playSfx("coin");
+      renderShop();
+    });
+  }
+  const bgmBox = $("shop-bgm");
+  bgmBox.innerHTML = "";
+  for (const p of ECO_BGM) {
+    const owned = eco.ownedBgm.includes(p.id);
+    const equipped = eco.bgmSet === p.id;
+    audioRow(bgmBox, p, "🎵", owned, equipped, () => auditionBgm(p.id), () => {
+      if (equipped) return;
+      if (owned) { setEco(equipBgm(eco, p.id)); renderShop(); return; }
+      const r = buyItem(eco, p);
+      if (!r.ok) { shopToast(r.reason); return; }
+      setEco(equipBgm(r.eco, p.id));
+      playSfx("coin");
+      renderShop();
+    });
+  }
 
   const packs = $("shop-coins-packs");
   packs.innerHTML = "";

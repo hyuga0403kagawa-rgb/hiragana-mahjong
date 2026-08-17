@@ -1,0 +1,6 @@
+node_modules/
+dist/
+tools/cloudflared.exe
+tools/tunnel.log
+tools/public-url.txt
+tools/keep-online.log

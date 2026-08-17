@@ -1,0 +1,17 @@
+{
+  "name": "hiragana-mahjong",
+  "version": "1.0.0",
+  "description": "ひらがな麻雀 — ことばをそろえてあがるファンメイドゲーム (ローカル/オンライン対戦)",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node tools/gameserver.mjs 8737",
+    "test": "node tools/validate_words.mjs && node tools/test_engine.mjs && node tools/test_rank.mjs && node tools/test_economy.mjs && node tools/test_collection.mjs && node tools/test_achievements.mjs && node tools/test_sim.mjs 15 0.55",
+    "kpi": "node tools/measure_kpi.mjs 400",
+    "build": "node tools/build_words.mjs && node tools/build_single.mjs"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "ws": "^8.21.3"
+  }
+}

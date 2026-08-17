@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#101b2c">
+<title>ひらがな麻雀</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<!-- スクリプトが動かなかったとき、白い画面のまま放置しないための保険。
+     モジュール読み込みより前に登録し、失敗を画面に見せる。 -->
+<div id="fatal-error" hidden>
+  <div class="fatal-card">
+    <h2>読み込みに失敗しました</h2>
+    <p id="fatal-msg"></p>
+    <p class="fatal-hint">ページを再読み込みしてもだめなときは、この文言を伝えてください。</p>
+    <button onclick="location.reload()" class="btn-primary">再読み込み</button>
+  </div>
+</div>
+<script>
+(function () {
+  var shown = false;
+  function show(msg) {
+    if (shown) return;
+    shown = true;
+    var box = document.getElementById("fatal-error");
+    var m = document.getElementById("fatal-msg");
+    if (box && m) { m.textContent = String(msg).slice(0, 300); box.hidden = false; }
+  }
+  window.addEventListener("error", function (e) {
+    show((e && e.message) || "不明なエラー");
+  });
+  window.addEventListener("unhandledrejection", function (e) {
+    show((e && e.reason && e.reason.message) || "不明なエラー");
+  });
+  // モジュールが起動しなかった場合 (パースエラー等) も検知する
+  window.addEventListener("load", function () {
+    setTimeout(function () {
+      if (!window.__uiReady) show("画面の初期化が終わりませんでした");
+    }, 4000);
+  });
+})();
+</script>
+<div id="app">
+
+  <!-- タイトル画面 -->
+  <section id="screen-title" class="screen active">
+    <div class="title-wrap">
+      <h1 class="game-logo"><span>ひ</span><span>ら</span><span>が</span><span>な</span><span class="logo-sep"></span><span>麻</span><span>雀</span></h1>
+      <p class="tagline">ことばを そろえて あがろう</p>
+      <!-- 初回はここだけ見せる。2回目以降は下のフルメニューに切りかわる -->
+      <div class="title-menu" id="menu-first">
+        <button id="btn-first-play" class="btn-primary big">はじめる</button>
+        <button id="btn-first-rules" class="btn-secondary">ルールを見る</button>
+        <button id="btn-first-more" class="btn-ghost">ほかのモードを見る</button>
+      </div>
+
+      <div class="title-menu" id="menu-full" hidden>
+        <button id="btn-mode-free" class="mode-btn primary-cta">
+          <span class="mode-name">フリー対戦</span>
+          <span class="mode-desc">CPUと気楽に。人数・つよさ・局数をえらべる</span>
+        </button>
+        <button id="btn-mode-rank" class="mode-btn">
+          <span class="mode-name">ランク戦</span>
+          <span class="mode-desc">オンラインで真剣勝負・ランクを上げよう</span>
+          <span class="rank-badge" id="title-rank-badge">G</span>
+        </button>
+        <button id="btn-mode-friend" class="mode-btn" hidden>
+          <span class="mode-name">ともだち対戦</span>
+          <span class="mode-desc">ルームコードでオンライン対戦</span>
+        </button>
+        <button id="btn-mode-profile" class="mode-btn shop">
+          <span class="mode-name">プロフィール</span>
+          <span class="mode-desc" id="title-profile-desc">なまえとアイコン</span>
+          <span class="coin-badge" id="title-profile-icon"></span>
+        </button>
+        <button id="btn-mode-ach" class="mode-btn shop">
+          <span class="mode-name">実績・称号</span>
+          <span class="mode-desc" id="title-ach-desc">称号を集めよう</span>
+          <span class="coin-badge" id="title-ach"></span>
+        </button>
+        <button id="btn-mode-book" class="mode-btn shop">
+          <span class="mode-name">ことば図鑑</span>
+          <span class="mode-desc">作ったことばを集めよう</span>
+          <span class="coin-badge" id="title-book"></span>
+        </button>
+        <button id="btn-mode-shop" class="mode-btn shop">
+          <span class="mode-name">ショップ</span>
+          <span class="mode-desc">牌の着せかえ・ヒント券</span>
+          <span class="coin-badge" id="title-coins">🪙 0</span>
+        </button>
+        <button id="btn-ad-reward" class="btn-ad">📺 広告を見てコインをもらう</button>
+        <button id="btn-rules" class="btn-ghost">ルールを見る</button>
+      </div>
+      <p class="credit">ひらがじゃん(牌ばーじょん)風・ファンメイド</p>
+    </div>
+  </section>
+
+  <!-- フリー対戦設定 -->
+  <section id="screen-free" class="screen">
+    <div class="setup-card">
+      <h2>フリー対戦</h2>
+      <label class="opt-label">対戦人数</label>
+      <div class="seg" id="seg-players">
+        <button data-n="2">2人</button>
+        <button data-n="3">3人</button>
+        <button data-n="4" class="on">4人</button>
+      </div>
+      <label class="opt-label">つよさ</label>
+      <div class="seg" id="seg-level">
+        <button data-l="700">やさしい</button>
+        <button data-l="1300" class="on">ふつう</button>
+        <button data-l="2400">むずかしい</button>
+      </div>
+      <label class="opt-label">局数</label>
+      <div class="seg" id="seg-rounds">
+        <button data-r="1">1局</button>
+        <button data-r="2">2局</button>
+        <button data-r="4" class="on">4局</button>
+      </div>
+      <button id="btn-start-free" class="btn-primary">はじめる</button>
+      <button id="btn-free-back" class="btn-ghost">もどる</button>
+    </div>
+  </section>
+
+  <!-- ランク戦 -->
+  <section id="screen-rank" class="screen">
+    <div class="setup-card">
+      <h2>ランク戦</h2>
+      <div class="rank-panel">
+        <div class="rank-big" id="rank-big">G</div>
+        <div class="rank-bar"><div class="rank-bar-fill" id="rank-bar-fill"></div></div>
+        <div class="rank-rp" id="rank-rp">0 / 100 RP</div>
+        <div class="rank-record" id="rank-record"></div>
+      </div>
+      <p class="rank-note"><b>オンライン対戦</b>・4人・2局勝負。順位でRPが増減<br>(1位 +30 / 2位 +10 / 3位 -10 / 4位 -25)<br>10秒で相手が見つからないときは<br>ランクに合った強さのCPUが参加します</p>
+      <p class="net-status" id="rank-status"></p>
+      <p class="rule-tip" id="rank-tip" hidden></p>
+      <button id="btn-start-rank" class="btn-primary">対戦相手をさがす</button>
+      <button id="btn-rank-cancel" class="btn-ghost" hidden>さがすのをやめる</button>
+      <button id="btn-rank-back" class="btn-ghost">もどる</button>
+    </div>
+  </section>
+
+  <!-- プロフィール -->
+  <section id="screen-profile" class="screen">
+    <div class="setup-card">
+      <h2>プロフィール</h2>
+      <label class="opt-label" for="inp-profile-name">なまえ</label>
+      <input id="inp-profile-name" class="txt-input" maxlength="8" placeholder="なまえ (8文字まで)" autocomplete="nickname">
+      <label class="opt-label">アイコン</label>
+      <div class="icon-grid" id="icon-grid"></div>
+      <button id="btn-profile-save" class="btn-primary">保存する</button>
+      <button id="btn-profile-back" class="btn-ghost">もどる</button>
+    </div>
+  </section>
+
+  <!-- ともだち対戦: 入口 -->
+  <section id="screen-friend" class="screen">
+    <div class="setup-card">
+      <h2>ともだち対戦</h2>
+      <button id="btn-friend-profile" class="btn-ghost" style="text-decoration:none"></button>
+      <button id="btn-room-create" class="btn-primary">ルームをつくる</button>
+      <div class="join-row">
+        <label class="visually-hidden" for="inp-code">ルームコード (4文字)</label>
+        <input id="inp-code" class="txt-input code" maxlength="4" placeholder="コード" autocomplete="off" inputmode="latin">
+        <button id="btn-room-join" class="btn-secondary">参加する</button>
+      </div>
+      <p class="net-status" id="net-status"></p>
+      <button id="btn-friend-back" class="btn-ghost">もどる</button>
+    </div>
+  </section>
+
+  <!-- ともだち対戦: ロビー -->
+  <section id="screen-lobby" class="screen">
+    <div class="setup-card">
+      <h2>ルーム <span id="lobby-code" class="lobby-code"></span></h2>
+      <p class="lobby-hint">ともだちは同じページを開いて<br>このコードで「参加する」!</p>
+      <div id="lobby-players"></div>
+      <div id="lobby-host-controls" hidden>
+        <label class="opt-label">局数</label>
+        <div class="seg" id="seg-lobby-rounds">
+          <button data-r="1">1局</button>
+          <button data-r="2" class="on">2局</button>
+          <button data-r="4">4局</button>
+        </div>
+        <button id="btn-add-cpu" class="btn-secondary">CPUを追加</button>
+        <button id="btn-lobby-start" class="btn-primary">対局開始</button>
+      </div>
+      <p class="lobby-wait" id="lobby-wait" hidden>ホストの開始を待っています…</p>
+      <p class="rule-tip" id="lobby-tip"></p>
+      <button id="btn-lobby-leave" class="btn-ghost">ルームを出る</button>
+    </div>
+  </section>
+
+  <!-- ショップ -->
+  <section id="screen-shop" class="screen">
+    <div class="setup-card shop-card">
+      <h2>ショップ</h2>
+      <div class="shop-wallet">🪙 <span id="shop-coins">0</span> コイン
+        <span class="shop-hints">💡 ヒント券 <span id="shop-hints">0</span>枚</span>
+      </div>
+      <div class="shop-scroll">
+        <h3 class="shop-sec">牌の着せかえ</h3>
+        <div id="shop-tiles"></div>
+        <h3 class="shop-sec">卓の着せかえ</h3>
+        <div id="shop-tables"></div>
+        <h3 class="shop-sec">アイテム</h3>
+        <div id="shop-items"></div>
+        <h3 class="shop-sec">課金 (デモ)</h3>
+        <div id="shop-coins-packs"></div>
+        <p class="shop-note">※コイン購入はデモです。実際のお金はかかりません。<br>コインは対局後にももらえます (1位40 / 2位25 / 3位10 / 4位5)</p>
+      </div>
+      <button id="btn-shop-back" class="btn-primary">もどる</button>
+    </div>
+  </section>
+
+  <!-- ことば図鑑 -->
+  <section id="screen-book" class="screen">
+    <div class="setup-card book-card">
+      <h2>ことば図鑑</h2>
+      <div class="book-progress">
+        <div class="book-count"><b id="book-found">0</b> / <span id="book-total">0</span> ことば</div>
+        <div class="rank-bar"><div class="rank-bar-fill" id="book-bar"></div></div>
+        <div class="book-percent" id="book-percent">0%</div>
+      </div>
+      <div class="seg" id="seg-book-len">
+        <button data-l="2" class="on">2文字</button>
+        <button data-l="3">3文字</button>
+        <button data-l="4">4文字</button>
+      </div>
+      <div class="book-scroll" id="book-list"></div>
+      <p class="shop-note">対局であがったことば・ポン・カンしたことばが記録されます<br>はじめて作ったことばは 🪙+3</p>
+      <button id="btn-book-back" class="btn-primary">もどる</button>
+    </div>
+  </section>
+
+  <!-- 実績・称号 -->
+  <section id="screen-ach" class="screen">
+    <div class="setup-card book-card">
+      <h2>実績・称号</h2>
+      <div class="book-progress">
+        <div class="book-count"><b id="ach-found">0</b> / <span id="ach-total">0</span> 称号</div>
+        <div class="rank-bar"><div class="rank-bar-fill" id="ach-bar"></div></div>
+        <div class="book-percent" id="ach-title-now"></div>
+      </div>
+      <div class="book-scroll" id="ach-list"></div>
+      <div class="ach-stats" id="ach-stats"></div>
+      <button id="btn-ach-back" class="btn-primary">もどる</button>
+    </div>
+  </section>
+
+  <!-- ルール画面 -->
+  <section id="screen-rules" class="screen">
+    <div class="rules-card">
+      <h2>ルール</h2>
+      <div class="rules-body">
+        <p><b>あがり:</b> 手牌13枚+ツモかロンの1枚、計14枚を<br><b>「2文字のことば×1」+「3文字のことば×4」</b>の5つの<b>ことば順にならべたら</b> あがり!<br><span class="rare-note">ならべないと「ツモ!」ボタンは出ない。ロンも「あと1枚」の形にならべてある時だけ。</span>2文字のことばの位置は先頭でも途中でもよい。</p>
+        <p><b>手番:</b> 山から1枚引いて、いらない牌を1枚捨てる。これをくり返す。</p>
+        <p><b>ポン:</b> 誰かの捨て牌 + 自分の手牌2枚で「3文字のことば」ができたら、もらって確定できる。</p>
+        <p><b>カン:</b> 手牌だけで「4文字のことば」ができたら、さらして山から1枚補充。4文字語は3文字語のわく1つ分になる。</p>
+        <p><b>ロン:</b> 誰かの捨て牌であがりの形が完成したら「ロン!」</p>
+        <p><b>牌:</b> 全120枚。ふつうのひらがな45音(「を」以外)は各2枚。<span class="rare-note">濁点・半濁点・小さい「ゃゅょっ」・のばし棒「ー」は各1枚だけのレア牌</span>。</p>
+        <p><b>得点:</b> あがり8点 + レア牌1枚につき+2点 + カン1回につき+2点。ツモは全員で割りかん、ロンは捨てた人が全額はらう。</p>
+        <p><b>ことばの判定:</b> アプリ内蔵の辞書(16,000語以上)で自動判定。ポン・カンができるときはボタンが表示される。</p>
+        <p><b>操作:</b> 牌を1回タップ=えらぶ、もう1回タップ=捨てる。牌は<b>横にドラッグ</b>してことばの順にならべる。「整列」であいうえお順にもどる(ならびは崩れる)。金枠+「ツモ」が引いてきた牌。</p>
+        <p><b>コインとショップ:</b> 対局するとコインがもらえる。ショップで牌や卓の着せかえ、ヒント券(フリー対戦専用)が買える。広告はデモ表示で、「広告なし」を買うと出なくなる。</p>
+      </div>
+      <button id="btn-rules-back" class="btn-primary">もどる</button>
+    </div>
+  </section>
+
+  <!-- 対局画面 -->
+  <section id="screen-game" class="screen">
+    <header id="top-bar">
+      <span id="round-label">1局目</span>
+      <span id="mode-label"></span>
+      <span id="wall-count">山 68</span>
+      <button id="btn-mute" title="音の切りかえ" aria-label="音のオンオフを切りかえる">🔊</button>
+      <button id="btn-help" title="ルール" aria-label="ルールを開く">?</button>
+    </header>
+
+    <div id="opponents"></div>
+
+    <div id="table-center">
+      <div id="rivers"></div>
+      <div id="banner" class="hidden"></div>
+      <div id="round-intro" class="hidden">
+        <div class="ri-round"></div>
+        <div class="ri-tip"></div>
+      </div>
+    </div>
+
+    <div id="player-area">
+      <div id="hint-row" hidden></div>
+      <div id="guide-bar"><span id="guide-text"></span><span id="guide-timer"></span></div>
+      <div id="my-melds"></div>
+      <div id="action-bar" class="hidden"></div>
+      <div id="my-hand"></div>
+      <div id="my-info">
+        <span id="my-name">あなた</span>
+        <span id="my-score">0点</span>
+        <button id="btn-hint" hidden>💡ヒント <span id="hint-count"></span></button>
+        <button id="btn-sort">整列</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 結果モーダル -->
+  <div id="modal" class="hidden">
+    <div id="modal-card"></div>
+  </div>
+
+  <!-- シェア画像モーダル (結果モーダルの上に重ねる) -->
+  <div id="share-modal" class="hidden">
+    <div id="share-card"></div>
+  </div>
+
+  <!-- 実績解除トースト -->
+  <div id="ach-toast"></div>
+
+</div>
+<script type="module" src="src/ui.js"></script>
+</body>
+</html>

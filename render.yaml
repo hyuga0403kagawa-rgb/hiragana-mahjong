@@ -1,0 +1,11 @@
+# Render Blueprint: リポジトリを接続すると Web Service が自動構成される
+services:
+  - type: web
+    name: hiragana-mahjong
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: HJ_DEBUG
+        value: "0"

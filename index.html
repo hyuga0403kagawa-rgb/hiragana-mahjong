@@ -51,12 +51,17 @@
       <p class="tagline">ことばを そろえて あがろう</p>
       <!-- 初回はここだけ見せる。2回目以降は下のフルメニューに切りかわる -->
       <div class="title-menu" id="menu-first">
-        <button id="btn-first-play" class="btn-primary big">はじめる</button>
-        <button id="btn-first-rules" class="btn-secondary">ルールを見る</button>
+        <button id="btn-first-practice" class="btn-primary big">ならべ方をおぼえる</button>
+        <button id="btn-first-play" class="btn-secondary">対戦してみる</button>
+        <button id="btn-first-rules" class="btn-ghost">ルールを見る</button>
         <button id="btn-first-more" class="btn-ghost">ほかのモードを見る</button>
       </div>
 
       <div class="title-menu" id="menu-full" hidden>
+        <button id="btn-mode-practice" class="mode-btn">
+          <span class="mode-name">ひとり練習</span>
+          <span class="mode-desc">相手なし・時間なし。ならべ方をじっくり覚える</span>
+        </button>
         <button id="btn-mode-free" class="mode-btn primary-cta">
           <span class="mode-name">フリー対戦</span>
           <span class="mode-desc">CPUと気楽に。人数・つよさ・局数をえらべる</span>

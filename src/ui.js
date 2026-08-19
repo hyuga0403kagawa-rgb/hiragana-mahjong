@@ -6,7 +6,7 @@ import {
   checkArrangedWin, checkArrangedRon, bestSegmentation, findWin,
 } from "./engine.js";
 import { chooseDiscard, shouldPon, shouldKan } from "./ai.js";
-import { WORDS2, WORDS3, WORDS4 } from "./data/words.js";
+import { WORDS2, WORDS3, WORDS4, CORE2, CORE3 } from "./data/words.js";
 import { RANKS, RP_PER_RANK, RP_BY_PLACE, loadRank, saveRank, applyResult } from "./rank.js";
 import { NetClient } from "./net.js";
 import {
@@ -277,6 +277,8 @@ function applyTitleMenu(forceFull = false) {
   $("menu-full").hidden = !full;
 }
 applyTitleMenu();
+$("btn-first-practice").onclick = () => startPractice();
+$("btn-mode-practice").onclick = () => startPractice();
 $("btn-first-play").onclick = () => showScreen("screen-free");
 $("btn-first-rules").onclick = () => { rulesReturn = "screen-title"; showScreen("screen-rules"); };
 $("btn-first-more").onclick = () => applyTitleMenu(true);
@@ -1122,7 +1124,7 @@ function renderHand(view) {
 
   // 何ブロックそろったかをガイドの隣に出す (ことばの中身は出さない)
   const badge = $("blk-count");
-  if (seg && game) {
+  if (seg && (game || mode === "practice")) {
     const need = myNeed3() + 1;
     badge.textContent = `ことば ${seg.validCount}/${need}`;
     badge.classList.toggle("complete", seg.validCount === need);
@@ -1207,6 +1209,7 @@ function moveTile(fromDi, toIdx) {
 // ================= 並べてあがる方式 =================
 // あがりは自動検出しない。手牌の「表示順」がことばに区切れているときだけ成立する。
 function myNeed3() {
+  if (mode === "practice") return 4;
   const v = currentView;
   if (!v) return 4;
   return 4 - (v.players[v.myIndex].melds?.length || 0);
@@ -1243,6 +1246,7 @@ function scheduleArrangeSync() {
   }, 200);
 }
 function notifyRearranged() {
+  if (mode === "practice") { checkPracticeComplete(); return; }
   scheduleArrangeSync();
   if (pendingResolve && pendingResolve.allowDiscard) {
     resolveHuman({ type: "rearranged" });
@@ -1255,6 +1259,7 @@ function esc(s) {
 
 // ================= 操作プロンプト =================
 function onTileTap(displayIdx, handIdx) {
+  if (mode === "practice") return;   // 練習では牌を捨てない (並べるだけ)
   if (!pendingResolve || !pendingResolve.allowDiscard) return;
   if (selectedIdx === displayIdx) {
     // 表示上もその位置の牌を除去 (次のreconcileと整合)
@@ -1441,6 +1446,134 @@ async function showFinalModal(lastResult, standings, extraHtml, buttons) {
   ).join("");
   const html = `<div class="modal-title">結果発表</div>${head}<table class="rank-table">${rows}</table>${extraHtml || ""}`;
   return showModal(html, buttons);
+}
+
+// ================= ひとり練習 (パズル) =================
+// 相手も時間制限もなく、「必ず並べられる14枚」だけが出る。
+// 新ルール (並べてあがる) を落ち着いて覚えるための場。
+const PRACTICE_KEY = "hiragana_mahjong_practice_solved";
+let practice = null;   // {tiles, answer, revealed}
+
+function tilesLegal(tiles) {
+  const c = counts(tiles);
+  for (const [ch, n] of c) {
+    if (n > (RARE_TILES.has(ch) ? 1 : 2)) return false;
+  }
+  return true;
+}
+function pickRandom(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+// 2文字語1つ + 3文字語4つ から、牌の枚数制限を満たす組み合わせを作る。
+// 出題は手作業で選んだコア語彙のみ (練習でマニアックな語を出しても学びにならない)。
+function makePracticeHand() {
+  for (let tries = 0; tries < 800; tries++) {
+    const two = pickRandom(CORE2);
+    const threes = [pickRandom(CORE3), pickRandom(CORE3), pickRandom(CORE3), pickRandom(CORE3)];
+    const tiles = [...two, ...threes.join("")];
+    if (tiles.length !== 14) continue;
+    if (!tilesLegal(tiles)) continue;
+    return { tiles: shuffleTiles(tiles), answer: { two, threes } };
+  }
+  return null;
+}
+function shuffleTiles(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function practiceView() {
+  return {
+    myIndex: 0, round: 1, totalRounds: 1,
+    wallCount: 0, turn: 0, phase: Phase.DISCARD, over: false,
+    players: [{ name: myName(), icon: myIcon(), score: 0, isCpu: false, melds: [], discards: [] }],
+    myHand: practice.tiles, drawnTile: null, lastDiscard: null,
+  };
+}
+function practiceSolved() { return +readStore(PRACTICE_KEY, "0") || 0; }
+
+function startPractice() {
+  mode = "practice";
+  game = null;
+  markPlayed();
+  applyTitleMenu();
+  showScreen("screen-game");
+  nextPractice();
+}
+
+function nextPractice() {
+  const p = makePracticeHand();
+  if (!p) { showScreen("screen-title"); return; }
+  practice = { ...p, revealed: false };
+  handDisplay = { chars: [], drawnMark: -1 };
+  selectedIdx = -1;
+  renderView(practiceView());
+  $("round-label").textContent = `${practiceSolved()} 問クリア`;
+  $("mode-label").textContent = "ひとり練習";
+  $("wall-count").textContent = "";
+  renderPracticeActions();
+  setGuide("ドラッグで「2文字×1 + 3文字×4」にならべよう", "my-turn");
+}
+
+function renderPracticeActions() {
+  renderActionBar([
+    { label: "こたえを見る", cls: "", value: { type: "reveal" } },
+    { label: "べつの問題", cls: "", value: { type: "next" } },
+  ]);
+  // 練習用のボタンは押しても対局処理に流さず、その場で完結させる
+  const bar = $("action-bar");
+  [...bar.querySelectorAll(".act-btn")].forEach((b, i) => {
+    b.onclick = i === 0 ? revealPracticeAnswer : nextPractice;
+  });
+}
+
+function revealPracticeAnswer() {
+  practice.revealed = true;
+  const a = practice.answer;
+  const words = [a.two, ...a.threes];
+  showModal(
+    `<div class="modal-title">こたえ</div>
+     <div class="modal-sub">この順にならべると あがりです</div>
+     <div class="missed-words">${words.map(w => `<span>${esc(w)}</span>`).join("")}</div>
+     <div class="modal-sub" style="margin-top:0.6rem">2文字のことばは どこに置いてもOK</div>`,
+    [{ label: "とじる", value: true }]);
+}
+
+// 並べ替えのたびに完成判定する
+function checkPracticeComplete() {
+  if (!practice || practice.done) return;
+  const win = checkArrangedWin(handDisplay.chars, 4, dict);
+  if (!win) return;
+  practice.done = true;
+  playSfx("win");
+  const solved = practice.revealed ? practiceSolved() : practiceSolved() + 1;
+  if (!practice.revealed) writeStore(PRACTICE_KEY, String(solved));
+  // 練習で作ったことばも図鑑に記録する
+  const words = [win.two, ...win.threes].filter(Boolean);
+  const rec = recordWords(book, words);
+  if (rec.newWords.length > 0) {
+    book = rec.col;
+    saveCollection(book);
+    setEco({ ...eco, coins: eco.coins + rec.newWords.length * NEW_WORD_COIN });
+    updateBookBadge();
+  }
+  showBanner("できた!", true);
+  setTimeout(() => {
+    showModal(
+      `<div class="modal-title">できた!</div>
+       <div class="modal-sub">${practice.revealed ? "こたえを見て" : ""}ならべられました</div>
+       ${tanzakuHtml(win, [])}
+       ${rec.newWords.length ? `<div class="modal-sub">はじめてのことば 🪙+${rec.newWords.length * NEW_WORD_COIN}</div>` : ""}
+       <div class="score-line">クリア <b>${solved}</b> 問</div>`,
+      [{ label: "つぎの問題", value: "next" }, { label: "やめる", value: "quit", ghost: true }]
+    ).then(v => {
+      if (v === "next") nextPractice();
+      else { practice = null; mode = "free"; showScreen("screen-title"); }
+    });
+  }, 900);
 }
 
 // ================= ローカル対戦 =================

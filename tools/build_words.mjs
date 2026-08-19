@@ -29,6 +29,11 @@ function check(word) {
 const FILES = readdirSync(TOOLS).filter(f => /^wordlist.*\.txt$/.test(f));
 console.log(`入力: ${FILES.join(", ")}`);
 
+// 手作業で選んだ語彙 (JMdict由来を除く) = 「誰でも知っていることば」。
+// ひとり練習の出題に使うので、辞書本体とは別に出力する。
+const CURATED_FILES = FILES.filter(f => f !== "wordlist_jmdict.txt");
+const curated = { 2: new Set(), 3: new Set() };
+
 const buckets = { 2: new Set(), 3: new Set(), 4: new Set() };
 const rejected = [];
 const dupes = [];
@@ -41,6 +46,7 @@ for (const f of FILES) {
     if (!buckets[len]) { rejected.push(`${w} (長さ${len})`); continue; }
     const err = check(w);
     if (err) { rejected.push(`${w} (${err})`); continue; }
+    if (curated[len] && CURATED_FILES.includes(f)) curated[len].add(w);
     if (buckets[len].has(w)) { dupes.push(w); continue; }
     buckets[len].add(w);
     }
@@ -70,12 +76,22 @@ ${fmt(sorted[3])}
 export const WORDS4 = [
 ${fmt(sorted[4])}
 ];
+
+// 手作業で選んだ「誰でも知っていることば」。ひとり練習の出題に使う。
+export const CORE2 = [
+${fmt([...curated[2]].sort((a, b) => a.localeCompare(b, "ja")))}
+];
+
+export const CORE3 = [
+${fmt([...curated[3]].sort((a, b) => a.localeCompare(b, "ja")))}
+];
 `;
 
 mkdirSync(join(ROOT, 'src', 'data'), { recursive: true });
 writeFileSync(join(ROOT, 'src', 'data', 'words.js'), out, 'utf8');
 
 console.log(`WORDS2: ${sorted[2].length}語 / WORDS3: ${sorted[3].length}語 / WORDS4: ${sorted[4].length}語`);
+console.log(`練習用コア語彙: CORE2 ${curated[2].size}語 / CORE3 ${curated[3].size}語`);
 console.log(`重複除去: ${dupes.length}件`);
 console.log(`除外: ${rejected.length}件`);
 for (const r of rejected) console.log('  REJECT ' + r);

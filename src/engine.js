@@ -176,7 +176,8 @@ export function checkArrangedRon(tilesInOrder, tile, need3, dict) {
 // 完成しているブロック数が最大になる区切り方を返す = プレイヤーの意図に一番近い解釈。
 // 13枚 (あと1枚待ち) のときは、どこか1ブロックだけ1枚不足として区切る。
 // 戻り値: { blocks: [{start, len, word, valid, short}], validCount } / 対象外の枚数なら null
-export function bestSegmentation(tilesInOrder, need3, dict) {
+// preferTwoPos: 同点なら前回と同じ区切りを維持する (区切り線が動き回ると狙いを定められないため)
+export function bestSegmentation(tilesInOrder, need3, dict, preferTwoPos = null) {
   const full = 2 + need3 * 3;
   const n = tilesInOrder.length;
   if (n !== full && n !== full - 1) return null;
@@ -190,6 +191,7 @@ export function bestSegmentation(tilesInOrder, need3, dict) {
       let idx = 0;
       const blocks = [];
       let validCount = 0;
+      let coveredTiles = 0;   // 成立ブロックが覆う牌数 (同じ数なら長い語を優先するため)
       for (let b = 0; b <= need3; b++) {
         const baseLen = b === twoPos ? 2 : 3;
         const len = b === shortIdx ? baseLen - 1 : baseLen;
@@ -198,12 +200,18 @@ export function bestSegmentation(tilesInOrder, need3, dict) {
         // 不足ブロックは判定しない (まだ言葉になっていないので)
         const valid = b === shortIdx ? false
           : (baseLen === 2 ? dict.w2.has(word) : dict.w3.has(word));
-        if (valid) validCount++;
+        if (valid) { validCount++; coveredTiles += len; }
         blocks.push({ start: idx, len, word, valid, short: b === shortIdx });
         idx += len;
       }
       if (idx !== n) continue;
-      if (!best || validCount > best.validCount) best = { blocks, validCount };
+      // 成立数 → 覆う牌数 → 前回と同じ区切り、の順で選ぶ
+      const better = !best
+        || validCount > best.validCount
+        || (validCount === best.validCount && coveredTiles > best.coveredTiles)
+        || (validCount === best.validCount && coveredTiles === best.coveredTiles
+            && twoPos === preferTwoPos && best.twoPos !== preferTwoPos);
+      if (better) best = { blocks, validCount, coveredTiles, twoPos };
     }
   }
   return best;

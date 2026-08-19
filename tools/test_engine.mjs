@@ -109,6 +109,12 @@ ok(!!checkArrangedRon([..."うみさくらみかんたいこすか"], "い", 4, 
   // 鳴きあり (need3=2 → 8枚)
   const seg5 = bestSegmentation([..."うみさくらみかん"], 2, dict);
   ok(seg5 && seg5.blocks.length === 3 && seg5.validCount === 3, "鳴き2つでは3ブロック");
+  // 同じ成立数なら「長い語」を優先する (さく より さくら)
+  const seg6 = bestSegmentation([..."さくらぬぬぬぬぬぬぬぬぬぬぬ"], 4, dict);
+  ok(seg6 && seg6.blocks[0].word === "さくら", `同点なら長い語を採用 (実際:${seg6 && seg6.blocks[0].word})`);
+  // 区切りの安定化: 同条件なら前回と同じ区切りを保つ
+  const flat = [..."ぬぬぬぬぬぬぬぬぬぬぬぬぬぬ"];
+  ok(bestSegmentation(flat, 4, dict, 3).twoPos === 3, "同点時は前回の区切りを維持");
 }
 
 // ---- 待ち ----

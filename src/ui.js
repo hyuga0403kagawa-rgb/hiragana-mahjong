@@ -1013,6 +1013,7 @@ function renderMyMelds(view) {
 // 表示順は「文字の並び」として自分で管理する。同じ文字の牌は互換なので
 // 表示位置→手牌indexの対応は文字マッチで再構築できる。
 let handDisplay = { chars: [], drawnMark: -1 };
+let lastTwoPos = 0;   // 直前に表示したブロック区切り (ちらつき防止)
 const kanaKey = (c) => c === "ー" ? "んん" : c;
 
 function sortedChars(hand) {
@@ -1058,14 +1059,37 @@ function renderHand(view) {
 
   // いまの並びを「ことばのブロック」に区切って可視化する。
   // 語そのものは教えず、「ここまでが1つのことばとして成立している」だけを示す。
-  const seg = bestSegmentation(handDisplay.chars, myNeed3(), dict);
-  const blockOf = new Array(handDisplay.chars.length).fill(null);
+  const chars = handDisplay.chars;
+  const seg = bestSegmentation(chars, myNeed3(), dict, lastTwoPos);
+  if (seg) lastTwoPos = seg.twoPos;
+  const blockOf = new Array(chars.length).fill(null);
+  const boundary = new Set();
   if (seg) {
     seg.blocks.forEach((b, bi) => {
+      boundary.add(b.start);
       for (let i = b.start; i < b.start + b.len; i++) {
         blockOf[i] = { bi, first: i === b.start, last: i === b.start + b.len - 1, valid: b.valid };
       }
     });
+  }
+  // ブロックの区切りに乗っていない「ことば」を見つけて破線で示す。
+  // (自分で見つけた語がなぜ光らないのか= 位置がずれている、と気づけるようにする)
+  const nearOf = new Array(chars.length).fill(false);
+  if (seg) {
+    for (let i = 0; i < chars.length; i++) {
+      for (const len of [2, 3]) {
+        if (i + len > chars.length) continue;
+        if (boundary.has(i) && blockOf[i] && blockOf[i].valid) continue; // 既に成立表示
+        const w = chars.slice(i, i + len).join("");
+        const hit = len === 2 ? dict.w2.has(w) : dict.w3.has(w);
+        if (!hit) continue;
+        // その位置がブロック境界と一致していなければ「ずれている」
+        const alignedValid = boundary.has(i) && blockOf[i] && blockOf[i].valid && blockOf[i].bi != null
+          && seg.blocks[blockOf[i].bi].len === len;
+        if (alignedValid) continue;
+        for (let k = i; k < i + len; k++) nearOf[k] = true;
+      }
+    }
   }
 
   const used = new Array(hand.length).fill(false);
@@ -1088,6 +1112,8 @@ function renderHand(view) {
         el.classList.add("blk-ok");
         if (b.first) el.classList.add("blk-ok-first");
         if (b.last) el.classList.add("blk-ok-last");
+      } else if (nearOf[di]) {
+        el.classList.add("blk-near");   // ことばだが区切りとずれている
       }
     }
     attachTileHandlers(el, di, hi);

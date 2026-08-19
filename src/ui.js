@@ -3,7 +3,7 @@
 // 共通の「ビュー描画 + プロンプト」レイヤの上で動かす。
 import {
   Game, Phase, Dict, RARE_TILES, counts, subsetDictByCount, kanOptions,
-  checkArrangedWin, checkArrangedRon,
+  checkArrangedWin, checkArrangedRon, bestSegmentation, findWin,
 } from "./engine.js";
 import { chooseDiscard, shouldPon, shouldKan } from "./ai.js";
 import { WORDS2, WORDS3, WORDS4 } from "./data/words.js";
@@ -150,6 +150,8 @@ updateAdButtons();
 // ================= ルール説明 (豆知識・初回説明・局開始) =================
 const RULE_TIPS = [
   "<b>あがりは自動では出ない!</b> 手牌を「2文字×1こ + 3文字×4こ」の<b>ことば順にならべる</b>と「ツモ!」が出る",
+  "ことばになったブロックは<b>牌が金色</b>になる。右上の「ことば ○/5」がそろえば あがり!",
+  "金色にならない = そのならびはまだことばになっていない。ドラッグして試してみよう",
   "手番では山から1枚引いて、いらない牌を1枚捨てる。このくり返し。",
   "牌は<b>横にドラッグ</b>で並び替え。ことばの順にそろえるのが あがりへの道!",
   "<b>ロン</b>したいなら「あと1枚」の形に<b>ならべておく</b>こと。バラバラの手牌ではロンは出ない",
@@ -200,7 +202,7 @@ async function maybeShowFirstIntro() {
     <div style="font-size:0.85rem;text-align:left;line-height:1.8">
       <p><b>1.</b> 山から1枚引いて、いらない牌を1枚捨てる。</p>
       <p><b>2.</b> 牌をドラッグして「<b>2文字×1こ + 3文字×4こ</b>」の<b>ことば順にならべたら</b>…あがり!</p>
-      <p><b>3.</b> ならべないと「ツモ!」は出ない。自分で見つけてならべよう!</p>
+      <p><b>3.</b> ならべないと「ツモ!」は出ない。ことばになった牌は<b>金色</b>になるので目じるしに!</p>
     </div>
     <div class="intro-words">
       ${word("2文字", "うみ")}
@@ -1047,6 +1049,19 @@ function renderHand(view) {
   box.innerHTML = "";
   const hand = view.myHand;
   reconcileHand(hand, view.turn === view.myIndex ? view.drawnTile : null);
+
+  // いまの並びを「ことばのブロック」に区切って可視化する。
+  // 語そのものは教えず、「ここまでが1つのことばとして成立している」だけを示す。
+  const seg = bestSegmentation(handDisplay.chars, myNeed3(), dict);
+  const blockOf = new Array(handDisplay.chars.length).fill(null);
+  if (seg) {
+    seg.blocks.forEach((b, bi) => {
+      for (let i = b.start; i < b.start + b.len; i++) {
+        blockOf[i] = { bi, first: i === b.start, last: i === b.start + b.len - 1, valid: b.valid };
+      }
+    });
+  }
+
   const used = new Array(hand.length).fill(false);
   handDisplay.chars.forEach((ch, di) => {
     let hi = -1;
@@ -1054,11 +1069,35 @@ function renderHand(view) {
       if (!used[i] && hand[i] === ch) { hi = i; used[i] = true; break; }
     }
     const el = tileEl(ch, "hand");
-    if (di === handDisplay.drawnMark) el.classList.add("drawn");
+    if (di === handDisplay.drawnMark) {
+      el.classList.add("drawn");
+      // まだ動かしていないツモ牌だけ、手牌本体からすき間を空ける
+      if (di === handDisplay.chars.length - 1) el.classList.add("drawn-sep");
+    }
     if (di === selectedIdx) el.classList.add("selected");
+    const b = blockOf[di];
+    if (b) {
+      if (b.first && di !== 0) el.classList.add("blk-start");
+      if (b.valid) {
+        el.classList.add("blk-ok");
+        if (b.first) el.classList.add("blk-ok-first");
+        if (b.last) el.classList.add("blk-ok-last");
+      }
+    }
     attachTileHandlers(el, di, hi);
     box.appendChild(el);
   });
+
+  // 何ブロックそろったかをガイドの隣に出す (ことばの中身は出さない)
+  const badge = $("blk-count");
+  if (seg && game) {
+    const need = myNeed3() + 1;
+    badge.textContent = `ことば ${seg.validCount}/${need}`;
+    badge.classList.toggle("complete", seg.validCount === need);
+    badge.hidden = false;
+  } else {
+    badge.hidden = true;
+  }
   $("btn-hint").hidden = !(mode === "free" && game);
 }
 
@@ -1154,6 +1193,9 @@ function arrangedRonNow(tile) {
   if (handDisplay.chars.length !== v.myHand.length) return null;
   return checkArrangedRon(handDisplay.chars, tile, myNeed3(), dict);
 }
+
+// 「並べればあがれた」手 (局終了時に振り返りとして見せる)
+let missedWin = null;
 
 // 並び替えが起きたとき: オンラインへ同期し、手番中なら選択肢を出し直す
 let arrangeSyncTimer = null;
@@ -1330,6 +1372,15 @@ async function showRoundEndModal(result, isLast) {
   }
   if (newWords.length > 0) playSfx("coin");
   html += newWordsHtml(newWords);
+  // 自分があがれなかった局で、並べればあがれた手があったなら教える (学習の手がかり)
+  if (!iWon && missedWin) {
+    const words = [missedWin.two, ...missedWin.threes].filter(Boolean);
+    html += `<div class="missed-box">
+      <div class="missed-title">おしい! こう ならべれば あがれました</div>
+      <div class="missed-words">${words.map(w => `<span>${esc(w)}</span>`).join("")}</div>
+    </div>`;
+  }
+  missedWin = null;
   if (iWon) html += `<div style="margin-top:0.6rem"><button id="btn-share-win" class="btn-secondary">画像でシェア</button></div>`;
 
   const attachShare = (card) => {
@@ -1447,6 +1498,11 @@ async function humanDiscardPhase() {
     const p = HUMAN;
     // あがりは並べたときだけ (自動探索はしない)
     const arranged = game.hands[p].length === game.fullHandSize(p) ? arrangedWinNow() : null;
+    // 学習用: 並べればあがれた手を覚えておき、局後に「おしい」と教える
+    if (!arranged && game.hands[p].length === game.fullHandSize(p)) {
+      const couldWin = findWin(game.hands[p], game.need3(p), dict);
+      if (couldWin) missedWin = couldWin;
+    }
     const kans = game.wall.length > 0 ? game.canKan(p) : [];
     const action = await promptTurn({ canTsumo: !!arranged, kanWords: kans });
     if (action.type === "rearranged") continue; // 並びが変わった → 選択肢を出し直す

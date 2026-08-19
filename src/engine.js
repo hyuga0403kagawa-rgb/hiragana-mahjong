@@ -171,6 +171,44 @@ export function checkArrangedRon(tilesInOrder, tile, need3, dict) {
   return null;
 }
 
+// ---- 並びのブロック分け (プレイヤーへの可視化用) ----
+// 手牌の並びを「2文字ブロック×1 + 3文字ブロック×need3」に区切る。
+// 完成しているブロック数が最大になる区切り方を返す = プレイヤーの意図に一番近い解釈。
+// 13枚 (あと1枚待ち) のときは、どこか1ブロックだけ1枚不足として区切る。
+// 戻り値: { blocks: [{start, len, word, valid, short}], validCount } / 対象外の枚数なら null
+export function bestSegmentation(tilesInOrder, need3, dict) {
+  const full = 2 + need3 * 3;
+  const n = tilesInOrder.length;
+  if (n !== full && n !== full - 1) return null;
+  const shortByOne = n === full - 1;
+  let best = null;
+
+  for (let twoPos = 0; twoPos <= need3; twoPos++) {
+    // shortIdx: 1枚不足させるブロック (足りている場合は -1 のみ)
+    const shortCandidates = shortByOne ? [...Array(need3 + 1).keys()] : [-1];
+    for (const shortIdx of shortCandidates) {
+      let idx = 0;
+      const blocks = [];
+      let validCount = 0;
+      for (let b = 0; b <= need3; b++) {
+        const baseLen = b === twoPos ? 2 : 3;
+        const len = b === shortIdx ? baseLen - 1 : baseLen;
+        if (len <= 0) { idx = -1; break; }
+        const word = tilesInOrder.slice(idx, idx + len).join("");
+        // 不足ブロックは判定しない (まだ言葉になっていないので)
+        const valid = b === shortIdx ? false
+          : (baseLen === 2 ? dict.w2.has(word) : dict.w3.has(word));
+        if (valid) validCount++;
+        blocks.push({ start: idx, len, word, valid, short: b === shortIdx });
+        idx += len;
+      }
+      if (idx !== n) continue;
+      if (!best || validCount > best.validCount) best = { blocks, validCount };
+    }
+  }
+  return best;
+}
+
 // ---- テンパイ/待ち牌 ----
 export function findWaits(tiles13, need3, dict) {
   const kinds = [...SEION, ...DAKUON, ...HANDAKUON, ...KOMOJI, ...CHOON];

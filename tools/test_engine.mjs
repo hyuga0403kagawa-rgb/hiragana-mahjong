@@ -1,7 +1,7 @@
 // エンジン単体テスト: node tools/test_engine.mjs
 import {
   buildTileSet, Dict, findWin, findWaits, ponOptions, kanOptions,
-  scoreWin, Game, Phase, counts, checkArrangedWin, checkArrangedRon,
+  scoreWin, Game, Phase, counts, checkArrangedWin, checkArrangedRon, bestSegmentation,
 } from "../src/engine.js";
 import { chooseDiscard, evaluateHand, shouldPon } from "../src/ai.js";
 
@@ -82,6 +82,33 @@ ok(!!checkArrangedRon([..."うみさくらみかんたいこすか"], "い", 4, 
   const d0 = checkArrangedWin(g0.hands[0], 4, dict);
   g0.winByTsumo(0, d0);
   ok(g0.roundResult.decomp === d0, "winByTsumoが渡した分解を使う");
+}
+
+// ---- ブロック可視化 ----
+{
+  // 完全に並んだ14枚 → 5ブロックすべて成立
+  const seg = bestSegmentation([..."うみさくらみかんたいこすいか"], 4, dict);
+  ok(seg && seg.blocks.length === 5 && seg.validCount === 5, "完成形は5ブロックすべて成立");
+  ok(seg.blocks[0].word === "うみ" && seg.blocks[0].len === 2, "先頭が2文字ブロック");
+  ok(seg.blocks[1].word === "さくら" && seg.blocks[1].start === 2, "位置情報が正しい");
+  // 2文字語が中間でも最良の区切りを見つける
+  const seg2 = bestSegmentation([..."さくらうみみかんたいこすいか"], 4, dict);
+  ok(seg2 && seg2.validCount === 5, "2文字語が中間でも5ブロック成立と判定");
+  // 部分的に並んでいる: さくら だけ成立
+  const seg3 = bestSegmentation([..."さくらぬぬぬぬぬぬぬぬぬぬぬ"], 4, dict);
+  ok(seg3 && seg3.validCount === 1 && seg3.blocks[0].word === "さくら", "部分的な完成も検出");
+  // ブロックの合計が必ず手牌長と一致
+  ok(seg3.blocks.reduce((s, b) => s + b.len, 0) === 14, "ブロック長の合計が手牌長と一致");
+  // 13枚 (1枚不足) でも区切れる
+  const seg4 = bestSegmentation([..."うみさくらみかんたいこすい"], 4, dict);
+  ok(seg4 && seg4.blocks.length === 5, "13枚でも5ブロックに区切る");
+  ok(seg4.blocks.some(b => b.short) && seg4.blocks.reduce((s, b) => s + b.len, 0) === 13, "1ブロックだけ不足扱い");
+  ok(seg4.validCount === 4, "13枚では完成4ブロックを検出");
+  // 対象外の枚数
+  ok(bestSegmentation([..."うみ"], 4, dict) === null, "枚数が合わないとnull");
+  // 鳴きあり (need3=2 → 8枚)
+  const seg5 = bestSegmentation([..."うみさくらみかん"], 2, dict);
+  ok(seg5 && seg5.blocks.length === 3 && seg5.validCount === 3, "鳴き2つでは3ブロック");
 }
 
 // ---- 待ち ----

@@ -314,6 +314,38 @@ body {
 #btn-sort { margin-left: auto; background: none; border: 1px solid var(--ai-light); color: var(--moji-dim);
   border-radius: 8px; padding: 3px 12px; font-size: 0.75rem; font-family: var(--gothic); cursor: pointer; }
 
+/* 「おしい」振り返り */
+.missed-box {
+  margin-top: 0.8rem; padding: 0.6rem; border-radius: 10px;
+  background: rgba(201,162,75,0.1); border: 1px dashed rgba(201,162,75,0.45);
+}
+.missed-title { font-size: 0.72rem; color: var(--kin); margin-bottom: 0.4rem; }
+.missed-words { display: flex; flex-wrap: wrap; gap: 5px; justify-content: center; }
+.missed-words span {
+  font-family: var(--mincho); font-size: 0.9rem; letter-spacing: 0.1em;
+  background: rgba(255,255,255,0.07); border-radius: 5px; padding: 2px 8px; color: var(--zouge);
+}
+
+/* ことばブロックの可視化 (並べてあがる方式の手ざわり) */
+.tile.hand.blk-start { margin-left: 7px; }          /* ブロックの切れ目にすき間 */
+.tile.hand.blk-ok {
+  box-shadow: 0 2px 0 var(--kin), 0 3px 6px rgba(0,0,0,0.4);
+  border-top: 2px solid var(--kin);
+}
+.tile.hand.blk-ok::after {                           /* 成立ブロックの下線 */
+  content: ""; position: absolute; left: -1px; right: -1px; bottom: -4px;
+  height: 2px; background: var(--kin);
+}
+.tile.hand.blk-ok-first::after { left: 1px; border-radius: 2px 0 0 2px; }
+.tile.hand.blk-ok-last::after { right: 1px; border-radius: 0 2px 2px 0; }
+#blk-count {
+  margin-left: auto; font-size: 0.72rem; color: var(--moji-dim);
+  border: 1px solid var(--ai-light); border-radius: 999px; padding: 1px 9px;
+  font-variant-numeric: tabular-nums;
+}
+#blk-count.complete { color: var(--sumi); background: var(--kin); border-color: var(--kin); font-weight: 700; }
+#blk-count[hidden] { display: none; }
+
 /* ドラッグ中の牌 */
 .tile.hand.dragging { opacity: 0.35; }
 .tile.hand.drop-target { outline: 2px dashed var(--kin); outline-offset: 1px; }
@@ -510,12 +542,14 @@ body[data-table-theme="akane"] #screen-game {
   cursor: pointer; transition: transform 0.12s;
 }
 .tile.hand.selected { transform: translateY(-10px); outline: 2px solid var(--shu); outline-offset: 1px; }
-/* ツモってきた牌: すき間+金の縁+「ツモ」ラベルで一目で分かる */
+/* ツモってきた牌: 金の縁+「ツモ」ラベルで一目で分かる */
 .tile.hand.drawn {
-  margin-left: 10px;
   outline: 2px solid var(--kin); outline-offset: 1px;
   box-shadow: 0 2px 0 #b08d3e, 0 0 12px rgba(201,162,75,0.55);
 }
+/* すき間は「まだ動かしていない (末尾にある)」ときだけ。
+   並べ替え後に出すと、ことばブロックの切れ目と紛らわしくなる。 */
+.tile.hand.drawn-sep { margin-left: 10px; }
 .tile.hand.drawn::before {
   content: "ツモ"; position: absolute; top: -17px; left: 50%; transform: translateX(-50%);
   font-family: var(--gothic); font-size: 9px; font-weight: 700; letter-spacing: 0.1em;

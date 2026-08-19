@@ -49,7 +49,13 @@ let book = loadCollection();
 let ach = loadAchievements();
 let onlineAvailable = false;
 
-window.__dbg = { dict, get game() { return game; }, get view() { return currentView; }, get eco() { return eco; } };
+window.__dbg = {
+  dict,
+  get game() { return game; },
+  get view() { return currentView; },
+  get eco() { return eco; },
+  get net() { return net; },   // 接続テスト用 (切断を再現するなど)
+};
 
 // ================= 経済 (テーマ適用・所持金表示) =================
 function applyThemes() {
@@ -318,7 +324,7 @@ $("btn-start-rank").onclick = async () => {
     net = new NetClient();
     bindNetHandlers(net);
     await net.connect();
-    net.send({ t: "rankJoin", name: rankPlayerName(), icon: myIcon(), rank: rankState.rank });
+    net.send({ t: "rankJoin", name: rankPlayerName(), icon: myIcon(), token: myToken(), rank: rankState.rank });
     $("rank-status").textContent = "対戦相手をさがしています…";
   } catch {
     $("rank-status").textContent = "サーバにつながりません";
@@ -1627,6 +1633,52 @@ async function showLocalFinal() {
 // ================= オンライン対戦 (ともだち) =================
 // なまえ・アイコンはプロフィール画面 (NAME_KEY / ICON_KEY) で管理する
 
+// ---- 再接続 ----
+// スマホはアプリ切り替えやトンネル越しの一瞬の断線でWebSocketが切れる。
+// 席はサーバ側で3分間確保されるので、トークンを見せて戻る。
+const TOKEN_KEY = "hiragana_mahjong_token";
+const SESSION_KEY = "hiragana_mahjong_session";
+function myToken() {
+  let t = readStore(TOKEN_KEY, "");
+  if (!/^[A-Za-z0-9_-]{8,64}$/.test(t)) {
+    t = "p" + Math.random().toString(36).slice(2) + Date.now().toString(36);
+    writeStore(TOKEN_KEY, t);
+  }
+  return t;
+}
+function markSession(active) {
+  writeStore(SESSION_KEY, active ? String(Date.now()) : "");
+}
+function sessionFresh() {
+  const ts = +readStore(SESSION_KEY, "0");
+  return ts > 0 && Date.now() - ts < 180_000;
+}
+
+let reconnectTries = 0;
+let reconnectTimer = null;
+async function tryResume() {
+  if (net) return;
+  clearTimeout(reconnectTimer);
+  const nc = new NetClient();
+  bindNetHandlers(nc);
+  try {
+    await nc.connect();
+    net = nc;
+    nc.send({ t: "resume", token: myToken() });
+  } catch {
+    scheduleReconnect();
+  }
+}
+function scheduleReconnect() {
+  if (!sessionFresh()) { setGuide("接続が切れました", "alert"); return; }
+  reconnectTries++;
+  if (reconnectTries > 12) { setGuide("接続が切れました。タイトルにもどってください", "alert"); return; }
+  const delay = Math.min(1000 * reconnectTries, 6000);
+  setGuide(`接続が切れました。もどしています… (${reconnectTries})`, "alert");
+  clearTimeout(reconnectTimer);
+  reconnectTimer = setTimeout(tryResume, delay);
+}
+
 // サーバがいるときだけ「ともだち対戦」を出す (ランク戦のオンライン可否も同じ判定)
 (async () => {
   try {
@@ -1636,18 +1688,29 @@ async function showLocalFinal() {
     if ((await r.json()).online) {
       onlineAvailable = true;
       $("btn-mode-friend").hidden = false;
+      // ページごと落ちた直後なら、対局中の席に戻れるか試す
+      if (sessionFresh()) tryResume();
     }
   } catch { /* サーバなし(Artifact等) → 非表示のまま */ }
 })();
 
+// アプリを切り替えて戻ってきたときに、切れていたら即座に戻りにいく
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && !net && sessionFresh()
+      && $("screen-game").classList.contains("active")) {
+    reconnectTries = 0;
+    tryResume();
+  }
+});
+
 $("btn-mode-friend").onclick = () => { $("net-status").textContent = ""; updateProfileBadges(); showScreen("screen-friend"); };
 $("btn-friend-back").onclick = () => { net?.close(); net = null; showScreen("screen-title"); };
 
-$("btn-room-create").onclick = () => enterRoom({ t: "create", name: myName(), icon: myIcon() });
+$("btn-room-create").onclick = () => enterRoom({ t: "create", name: myName(), icon: myIcon(), token: myToken() });
 $("btn-room-join").onclick = () => {
   const code = $("inp-code").value.trim().toUpperCase();
   if (code.length !== 4) { $("net-status").textContent = "4文字のコードを入れてください"; return; }
-  enterRoom({ t: "join", code, name: myName(), icon: myIcon() });
+  enterRoom({ t: "join", code, name: myName(), icon: myIcon(), token: myToken() });
 };
 
 async function enterRoom(firstMsg) {
@@ -1684,6 +1747,8 @@ function bindNetHandlers(nc) {
     showScreen("screen-lobby");
   });
   nc.on("state", (m) => {
+    markSession(true);   // 対局中の印 (切断時にここへ戻るため)
+    reconnectTries = 0;
     if (!$("screen-game").classList.contains("active")) {
       markPlayed();
       applyTitleMenu();
@@ -1737,6 +1802,7 @@ function bindNetHandlers(nc) {
   });
   nc.on("gameEnd", async (m) => {
     cancelPending();
+    markSession(false);   // 対局が終わったので再接続は不要
     if (window.__autoAnswer) { window.__lastGameEnd = m; return; }
     const standings = m.standings.map(s => ({ ...s, isMe: s.idx === m.youIdx }));
     const myPlace = standings.findIndex(s => s.isMe);
@@ -1779,14 +1845,33 @@ function bindNetHandlers(nc) {
     await maybeShowGameEndAd();
     // サーバがロビー状態に戻す → lobbyメッセージで画面遷移
   });
+  nc.on("resumed", (m) => {
+    reconnectTries = 0;
+    renderView(m.view);
+    showScreen("screen-game");
+    setGuide("もどりました!", "my-turn");
+  });
+  nc.on("resumeFailed", () => {
+    markSession(false);
+    net?.close();
+    net = null;
+    showModal(`<div class="modal-title">もどれませんでした</div>
+      <div class="modal-sub">対局はすでに終わったか、時間が経ちすぎています</div>`,
+      [{ label: "タイトルへ", value: true }]).then(() => showScreen("screen-title"));
+  });
   nc.on("closed", () => {
     cancelPending();
+    net = null;
+    // 対局中の切断は自動で席に戻りにいく (スマホのアプリ切り替え・一瞬の断線対策)
+    if ($("screen-game").classList.contains("active") && sessionFresh()) {
+      scheduleReconnect();
+      return;
+    }
     resetRankSearchUI();
     if ($("screen-game").classList.contains("active") || $("screen-lobby").classList.contains("active")) {
       showModal(`<div class="modal-title">切断</div><div class="modal-sub">サーバとの接続が切れました</div>`,
         [{ label: "タイトルへ", value: true }]).then(() => showScreen("screen-title"));
     }
-    net = null;
   });
 }
 

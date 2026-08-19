@@ -60,6 +60,8 @@ function cleanIcon(raw) {
 }
 const TURN_TIMEOUT = 60_000;
 const CLAIM_TIMEOUT = 20_000;
+// 切断してから席を確保しておく時間。スマホはアプリ切り替えで簡単に切れるので長めに取る。
+const RECONNECT_WINDOW = 180_000;
 
 function newCode() {
   for (let tries = 0; tries < 100; tries++) {
@@ -104,6 +106,24 @@ function broadcastLobby(room) {
 function cleanName(raw) {
   const s = String(raw ?? "").replace(/[\r\n\t]/g, "").trim().slice(0, 8);
   return s || "ななし";
+}
+// 再接続用のトークン。ブラウザが自分で生成した文字列で、席の持ち主を照合するだけに使う。
+function cleanToken(raw) {
+  const s = String(raw ?? "").trim();
+  return /^[A-Za-z0-9_-]{8,64}$/.test(s) ? s : null;
+}
+// トークンから「再接続を待っている席」を探す
+function findResumable(token) {
+  if (!token) return null;
+  const now = Date.now();
+  for (const room of rooms.values()) {
+    if (room.state !== "playing" || room.aborted) continue;
+    const idx = room.seats.findIndex(s =>
+      !s.isCpu && !s.connected && s.token === token &&
+      s.disconnectedAt && now - s.disconnectedAt < RECONNECT_WINDOW);
+    if (idx >= 0) return { room, seat: room.seats[idx], idx };
+  }
+  return null;
 }
 
 // ================= 対局進行 =================
@@ -150,6 +170,22 @@ function askSeat(room, seatIdx, prompt, timeoutMs) {
 
 function humanAlive(room) {
   return room.seats.some(s => !s.isCpu && s.connected);
+}
+// 再接続を待つ価値がある席が残っているか (切断直後の人間席)
+function reconnectPending(room) {
+  const now = Date.now();
+  return room.seats.some(s => !s.isCpu && !s.connected && s.disconnectedAt && now - s.disconnectedAt < RECONNECT_WINDOW);
+}
+// 誰も戻ってこないまま時間が過ぎたら部屋を片付ける
+function scheduleAbandonCheck(room) {
+  clearTimeout(room.abandonTimer);
+  room.abandonTimer = setTimeout(() => {
+    if (room.state === "done") return;
+    if (humanAlive(room) || reconnectPending(room)) { scheduleAbandonCheck(room); return; }
+    dlog(`room ${room.code}: 誰も戻らないため解散`);
+    room.aborted = true;
+    rooms.delete(room.code);
+  }, RECONNECT_WINDOW + 5_000);
 }
 
 // ---- 並べてあがる方式 (人間のみ) ----
@@ -269,7 +305,7 @@ function startRankMatch() {
   }
   room.isRank = true;
   for (const q of entries) {
-    const seat = { name: q.name, icon: q.icon, ws: q.ws, isCpu: false, connected: true, pending: null, onReady: null };
+    const seat = { name: q.name, icon: q.icon, token: q.token, ws: q.ws, isCpu: false, connected: true, pending: null, onReady: null };
     room.seats.push(seat);
     q.st.room = room;
     q.st.seat = seat;
@@ -477,16 +513,14 @@ wss.on("connection", (ws) => {
       if (!room.seats.some(s => !s.isCpu)) { rooms.delete(room.code); }
       else broadcastLobby(room);
     } else {
-      // 対局中: CPUが引き継ぐ
-      seat.isCpu = true;
+      // 対局中: 席は残したままCPUが代打ちし、しばらく再接続を待つ
+      // (isCpu は false のまま。discardPhase等は !seat.connected でCPU扱いする)
+      seat.disconnectedAt = Date.now();
       seat.cpuDict = seat.cpuDict || subsetDictByCount(dict, 1300);
       seat.pending?.resolve(null);
-      if (!humanAlive(room)) {
-        room.aborted = true;
-        rooms.delete(room.code);
-      } else {
-        broadcastState(room);
-      }
+      dlog(`room ${room.code}: ${seat.name} 切断 → CPU代打ち (再接続待ち)`);
+      scheduleAbandonCheck(room);
+      broadcastState(room);
     }
   };
 
@@ -501,7 +535,7 @@ wss.on("connection", (ws) => {
       const r = makeRoom();
       if (!r) { ws.send(JSON.stringify({ t: "error", msg: "ルームを作れませんでした" })); return; }
       st.room = r;
-      st.seat = { name: cleanName(msg.name), icon: cleanIcon(msg.icon), ws, isCpu: false, connected: true, pending: null, onReady: null };
+      st.seat = { name: cleanName(msg.name), icon: cleanIcon(msg.icon), token: cleanToken(msg.token), ws, isCpu: false, connected: true, pending: null, onReady: null };
       r.seats.push(st.seat);
       broadcastLobby(r);
       return;
@@ -512,9 +546,23 @@ wss.on("connection", (ws) => {
       if (r.state !== "lobby") { ws.send(JSON.stringify({ t: "error", msg: "対局中のルームです" })); return; }
       if (r.seats.length >= 4) { ws.send(JSON.stringify({ t: "error", msg: "ルームが満員です(4人まで)" })); return; }
       st.room = r;
-      st.seat = { name: cleanName(msg.name), icon: cleanIcon(msg.icon), ws, isCpu: false, connected: true, pending: null, onReady: null };
+      st.seat = { name: cleanName(msg.name), icon: cleanIcon(msg.icon), token: cleanToken(msg.token), ws, isCpu: false, connected: true, pending: null, onReady: null };
       r.seats.push(st.seat);
       broadcastLobby(r);
+      return;
+    }
+    // 再接続: 切断中の自分の席に戻る
+    if (msg.t === "resume" && !st.room) {
+      const found = findResumable(cleanToken(msg.token));
+      if (!found) { ws.send(JSON.stringify({ t: "resumeFailed" })); return; }
+      found.seat.ws = ws;
+      found.seat.connected = true;
+      found.seat.disconnectedAt = null;
+      st.room = found.room;
+      st.seat = found.seat;
+      dlog(`room ${found.room.code}: ${found.seat.name} 再接続`);
+      sendTo(found.seat, { t: "resumed", view: viewFor(found.room, found.idx) });
+      broadcastState(found.room);
       return;
     }
     // ランク戦マッチング
@@ -523,6 +571,7 @@ wss.on("connection", (ws) => {
         ws, st,
         name: cleanName(msg.name),
         icon: cleanIcon(msg.icon),
+        token: cleanToken(msg.token),
         rank: RANKS.includes(msg.rank) ? msg.rank : "G",
       };
       entry.timer = setTimeout(() => {

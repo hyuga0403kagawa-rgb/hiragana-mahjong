@@ -1,5 +1,8 @@
 # 公開・運用ガイド
 
+**現在の本番: https://hiragana-mahjong.onrender.com (モードB・2026-08-20デプロイ済み)**
+リポジトリ: https://github.com/hyuga0403kagawa-rgb/hiragana-mahjong (mainへのpushで自動デプロイ)
+
 公開方法は**用途ごとに3モード**ある。期待値が違うので混ぜないこと。
 
 | モード | URL | 稼働 | オンライン対戦 | 用途 |

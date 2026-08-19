@@ -6,6 +6,7 @@ services:
     plan: free
     buildCommand: npm install
     startCommand: npm start
+    healthCheckPath: /api/online
     envVars:
       - key: HJ_DEBUG
         value: "0"

@@ -2074,3 +2074,17 @@ function renderLobby(m) {
   $("lobby-host-controls").hidden = !isHost;
   $("lobby-wait").hidden = isHost;
 }
+
+// ================= PWA (Service Worker登録) =================
+// サンドボックス化されたページ (Artifact埋め込み・単一HTML版) では
+// sw.jsが存在せず登録は必ず失敗するので、そのまま静かに諦める。
+// ゲームサーバ配信 (このファイル構成) のときだけ意味を持つ。
+// ui.jsは type=module で非同期に読み込まれるため、実行時には既に
+// window の load が発火済みのことが多い。document.readyState で分岐する。
+if ("serviceWorker" in navigator) {
+  const registerSW = () => {
+    navigator.serviceWorker.register("sw.js").catch(() => { /* 単一HTML版・Artifact版では想定内 */ });
+  };
+  if (document.readyState === "complete") registerSW();
+  else window.addEventListener("load", registerSW);
+}

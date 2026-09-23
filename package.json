@@ -13,5 +13,11 @@
   "license": "MIT",
   "dependencies": {
     "ws": "^8.21.3"
+  },
+  "devDependencies": {
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/cli": "^8.5.2",
+    "@capacitor/core": "^8.5.2",
+    "@capacitor/ios": "^8.5.2"
   }
 }

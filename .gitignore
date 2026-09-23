@@ -5,3 +5,21 @@ tools/tunnel.log
 tools/public-url.txt
 tools/keep-online.log
 tools/server.log
+
+# ネイティブアプリ (Capacitor) 関連
+native-tools/
+www/
+android/local.properties
+android/app/build/
+android/build/
+android/.gradle/
+android/captures/
+android/*.iml
+android/app/*.iml
+ios/App/Pods/
+ios/App/build/
+ios/App/DerivedData/
+ios/App/App.xcworkspace/xcuserdata/
+ios/App/App.xcodeproj/xcuserdata/
+ios/App/Podfile.lock
+android/play-store-icon-512.png

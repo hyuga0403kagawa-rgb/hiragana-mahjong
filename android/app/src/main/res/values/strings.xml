@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">ひらがな麻雀</string>
+    <string name="title_activity_main">ひらがな麻雀</string>
+    <string name="package_name">com.hyuga0403kagawa.hiraganamahjong</string>
+    <string name="custom_url_scheme">com.hyuga0403kagawa.hiraganamahjong</string>
+</resources>

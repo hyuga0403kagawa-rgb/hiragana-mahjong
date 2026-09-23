@@ -1,4 +1,22 @@
-// オンライン対戦クライアント: 同一オリジンの /ws へ接続してJSONメッセージを送受信する
+// オンライン対戦クライアント: サーバーの /ws へ接続してJSONメッセージを送受信する
+//
+// Web版・PWA版はゲームサーバーが配信するページなので「同一オリジン」で繋がる。
+// ネイティブアプリ(Capacitor)はローカルにバンドルした資産から起動するため
+// location.host が本番サーバーと一致しない。その場合は固定の本番オリジンを使う。
+const PROD_HOST = "hiragana-mahjong.onrender.com";
+function isNativeApp() {
+  return !!(typeof window !== "undefined" && window.Capacitor?.isNativePlatform?.());
+}
+// 同一オリジン判定に使うAPIオリジン (ui.jsのオンライン確認フェッチにも使う)
+export function serverOrigin() {
+  return isNativeApp() ? `https://${PROD_HOST}` : location.origin;
+}
+function wsOrigin() {
+  if (isNativeApp()) return `wss://${PROD_HOST}`;
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  return `${proto}//${location.host}`;
+}
+
 export class NetClient {
   constructor() {
     this.ws = null;
@@ -9,8 +27,7 @@ export class NetClient {
 
   connect() {
     return new Promise((resolve, reject) => {
-      const proto = location.protocol === "https:" ? "wss:" : "ws:";
-      const ws = new WebSocket(`${proto}//${location.host}/ws`);
+      const ws = new WebSocket(`${wsOrigin()}/ws`);
       this.ws = ws;
       const timer = setTimeout(() => { ws.close(); reject(new Error("timeout")); }, 5000);
       ws.onopen = () => { clearTimeout(timer); resolve(); };

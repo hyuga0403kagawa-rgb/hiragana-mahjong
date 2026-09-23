@@ -31,7 +31,12 @@ const httpServer = createServer(async (req, res) => {
   try {
     let path = decodeURIComponent(new URL(req.url, "http://x").pathname);
     if (path === "/api/online") {
-      res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+      // ネイティブアプリ(Capacitor)は別オリジン(capacitor://localhost 等)から
+      // この生死確認だけをfetchで叩く。中身は真偽値だけで機密性がないため全許可でよい。
+      res.writeHead(200, {
+        "Content-Type": "application/json", "Cache-Control": "no-store",
+        "Access-Control-Allow-Origin": "*",
+      });
       res.end(JSON.stringify({ online: true }));
       return;
     }

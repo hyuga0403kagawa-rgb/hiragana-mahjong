@@ -8,7 +8,7 @@ import {
 import { chooseDiscard, shouldPon, shouldKan } from "./ai.js";
 import { WORDS2, WORDS3, WORDS4, CORE2, CORE3 } from "./data/words.js";
 import { RANKS, RP_PER_RANK, RP_BY_PLACE, loadRank, saveRank, applyResult } from "./rank.js";
-import { NetClient } from "./net.js";
+import { NetClient, serverOrigin } from "./net.js";
 import {
   TILE_THEMES, TABLE_THEMES, HINT_PACK, COIN_PACKS, AD_FREE_ITEM, AD_REWARD,
   SFX_PACKS as ECO_SFX, BGM_SETS as ECO_BGM,
@@ -552,42 +552,51 @@ function renderShop() {
     });
   }
 
+  // 実際の課金導線 (コインパック・広告なし) は「デモ決済」であり、実際には課金されない。
+  // App Store/Google Play審査に出すネイティブ版では、実装と打ち出しを一致させるため非表示にする
+  // (実際の支払い機能が無いのに購入ボタンを出すと、審査での誤解や実装との不一致になるため)。
+  // Web版・PWA版は従来どおりデモ表示のまま (社長に事前確認済みの挙動を変えない)。
   const packs = $("shop-coins-packs");
   packs.innerHTML = "";
-  // 広告なしはコインでは買えない課金専用 (現状デモ決済)
-  packs.appendChild(shopRow(
-    "🚫", AD_FREE_ITEM.name, AD_FREE_ITEM.desc,
-    eco.adFree ? "購入済み" : AD_FREE_ITEM.demoPrice,
-    eco.adFree ? "equipped" : "",
-    async () => {
-      if (eco.adFree) return;
-      const ok = await showModal(
-        `<div class="modal-title">デモ購入</div>
-         <div class="modal-sub">「${AD_FREE_ITEM.name}」を ${AD_FREE_ITEM.demoPrice} で購入した「つもり」になります。<br>実際の決済は行われません。</div>`,
-        [{ label: "購入する(デモ)", value: true }, { label: "やめる", value: false, ghost: true }]);
-      if (!ok) return;
-      const r = buyAdFree(eco);
-      if (!r.ok) { shopToast(r.reason); return; }
-      setEco(r.eco);
-      playSfx("coin");
-      renderShop();
-    },
-    eco.adFree,
-  ));
-  for (const p of COIN_PACKS) {
+  const isNative = !!(typeof window !== "undefined" && window.Capacitor?.isNativePlatform?.());
+  $("shop-billing-title").hidden = isNative;
+  $("shop-billing-native-note").hidden = !isNative;
+  if (!isNative) {
+    // 広告なしはコインでは買えない課金専用 (現状デモ決済)
     packs.appendChild(shopRow(
-      "🪙", p.label, "デモ購入 (実際のお金はかかりません)", p.demoPrice, "",
+      "🚫", AD_FREE_ITEM.name, AD_FREE_ITEM.desc,
+      eco.adFree ? "購入済み" : AD_FREE_ITEM.demoPrice,
+      eco.adFree ? "equipped" : "",
       async () => {
+        if (eco.adFree) return;
         const ok = await showModal(
           `<div class="modal-title">デモ購入</div>
-           <div class="modal-sub">${p.label} を ${p.demoPrice} で購入した「つもり」になります。<br>実際の決済は行われません。</div>`,
+           <div class="modal-sub">「${AD_FREE_ITEM.name}」を ${AD_FREE_ITEM.demoPrice} で購入した「つもり」になります。<br>実際の決済は行われません。</div>`,
           [{ label: "購入する(デモ)", value: true }, { label: "やめる", value: false, ghost: true }]);
         if (!ok) return;
-        setEco(buyCoinPack(eco, p).eco);
+        const r = buyAdFree(eco);
+        if (!r.ok) { shopToast(r.reason); return; }
+        setEco(r.eco);
         playSfx("coin");
         renderShop();
       },
+      eco.adFree,
     ));
+    for (const p of COIN_PACKS) {
+      packs.appendChild(shopRow(
+        "🪙", p.label, "デモ購入 (実際のお金はかかりません)", p.demoPrice, "",
+        async () => {
+          const ok = await showModal(
+            `<div class="modal-title">デモ購入</div>
+             <div class="modal-sub">${p.label} を ${p.demoPrice} で購入した「つもり」になります。<br>実際の決済は行われません。</div>`,
+            [{ label: "購入する(デモ)", value: true }, { label: "やめる", value: false, ghost: true }]);
+          if (!ok) return;
+          setEco(buyCoinPack(eco, p).eco);
+          playSfx("coin");
+          renderShop();
+        },
+      ));
+    }
   }
 }
 let shopToastTimer = null;
@@ -1843,7 +1852,7 @@ function scheduleReconnect() {
   try {
     const ctl = new AbortController();
     setTimeout(() => ctl.abort(), 2500);
-    const r = await fetch("api/online", { signal: ctl.signal });
+    const r = await fetch(`${serverOrigin()}/api/online`, { signal: ctl.signal });
     if ((await r.json()).online) {
       onlineAvailable = true;
       $("btn-mode-friend").hidden = false;
@@ -2079,9 +2088,12 @@ function renderLobby(m) {
 // サンドボックス化されたページ (Artifact埋め込み・単一HTML版) では
 // sw.jsが存在せず登録は必ず失敗するので、そのまま静かに諦める。
 // ゲームサーバ配信 (このファイル構成) のときだけ意味を持つ。
+// ネイティブアプリ(Capacitor)は資産が最初からローカルにあるためオフライン化の
+// 意味がなく、WebViewでのService Worker対応も不安定なので登録自体をしない。
 // ui.jsは type=module で非同期に読み込まれるため、実行時には既に
 // window の load が発火済みのことが多い。document.readyState で分岐する。
-if ("serviceWorker" in navigator) {
+const isNativeShell = !!(typeof window !== "undefined" && window.Capacitor?.isNativePlatform?.());
+if ("serviceWorker" in navigator && !isNativeShell) {
   const registerSW = () => {
     navigator.serviceWorker.register("sw.js").catch(() => { /* 単一HTML版・Artifact版では想定内 */ });
   };

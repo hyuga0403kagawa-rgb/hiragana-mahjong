@@ -1,0 +1,16 @@
+{
+  "appId": "com.hyuga0403kagawa.hiraganamahjong",
+  "appName": "ひらがな麻雀",
+  "webDir": "www",
+  "backgroundColor": "#101b2c",
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "backgroundColor": "#101b2c"
+  },
+  "ios": {
+    "backgroundColor": "#101b2c",
+    "contentInset": "always"
+  }
+}

@@ -80,6 +80,14 @@ updateEcoBadges();
 // ================= 広告 (デモ) =================
 // 実広告ネットワークは未接続。架空広告を「広告(デモ)」と明示して表示する。
 // 実物にする場合はこの showAdModal を広告SDK呼び出しに差し替える。
+// ストア版(ネイティブ)ではデモ広告を一切出さない (2026-09-23 社長決定)。
+// 実際のお金が動かない広告をストア版に出すと、打ち出しと実装が食い違い、審査でも仮コンテンツ扱いされるため。
+// Web版・PWA版は従来どおりデモ広告を表示する。
+const IS_NATIVE = !!(typeof window !== "undefined" && window.Capacitor?.isNativePlatform?.());
+if (IS_NATIVE) {
+  $("rules-ad-note").hidden = true;
+  $("shop-demo-note").hidden = true;
+}
 const DEMO_ADS = [
   { title: "たんぽぽ亭の おことばラーメン", body: "三文字で「うまい」。※架空のお店です" },
   { title: "ヒント券セール開催中!", body: "ことばに つまったら ショップへ" },
@@ -130,6 +138,7 @@ function showAdModal({ rewarded = false } = {}) {
 }
 
 async function maybeShowGameEndAd() {
+  if (IS_NATIVE) return;
   const r = shouldShowGameEndAd(eco);
   setEco(r.eco);
   if (r.show) await showAdModal({ rewarded: false });
@@ -143,8 +152,9 @@ async function watchRewardedAd() {
   updateAdButtons();
 }
 function updateAdButtons() {
-  const left = adRewardsLeft(eco, todayStr());
   const b = $("btn-ad-reward");
+  if (IS_NATIVE) { b.hidden = true; return; }
+  const left = adRewardsLeft(eco, todayStr());
   b.textContent = left > 0
     ? `📺 広告でコインGET 🪙${AD_REWARD} (きょうあと${left}回)`
     : "📺 広告でコインGET (きょうは上限)";
@@ -236,7 +246,7 @@ document.addEventListener("pointerdown", () => unlockAudio(), { once: true });
 // 起動時: 初回だけ「あそびかた」を表示。それ以外は起動広告 (「広告なし」購入済みなら出ない)
 setTimeout(async () => {
   const introShown = await maybeShowFirstIntro();
-  if (!introShown && !eco.adFree) showAdModal({ rewarded: false });
+  if (!introShown && !eco.adFree && !IS_NATIVE) showAdModal({ rewarded: false });
 }, 600);
 
 // ================= 画面遷移 =================
@@ -496,7 +506,7 @@ function renderShop() {
     },
   ));
 
-  items.appendChild(shopRow(
+  if (!IS_NATIVE) items.appendChild(shopRow(
     "📺", `広告を見る (🪙${AD_REWARD})`, `きょうあと${adRewardsLeft(eco, todayStr())}回`,
     "視聴", "",
     async () => { await watchRewardedAd(); renderShop(); },
@@ -558,10 +568,9 @@ function renderShop() {
   // Web版・PWA版は従来どおりデモ表示のまま (社長に事前確認済みの挙動を変えない)。
   const packs = $("shop-coins-packs");
   packs.innerHTML = "";
-  const isNative = !!(typeof window !== "undefined" && window.Capacitor?.isNativePlatform?.());
-  $("shop-billing-title").hidden = isNative;
-  $("shop-billing-native-note").hidden = !isNative;
-  if (!isNative) {
+  $("shop-billing-title").hidden = IS_NATIVE;
+  $("shop-billing-native-note").hidden = !IS_NATIVE;
+  if (!IS_NATIVE) {
     // 広告なしはコインでは買えない課金専用 (現状デモ決済)
     packs.appendChild(shopRow(
       "🚫", AD_FREE_ITEM.name, AD_FREE_ITEM.desc,
@@ -2092,8 +2101,7 @@ function renderLobby(m) {
 // 意味がなく、WebViewでのService Worker対応も不安定なので登録自体をしない。
 // ui.jsは type=module で非同期に読み込まれるため、実行時には既に
 // window の load が発火済みのことが多い。document.readyState で分岐する。
-const isNativeShell = !!(typeof window !== "undefined" && window.Capacitor?.isNativePlatform?.());
-if ("serviceWorker" in navigator && !isNativeShell) {
+if ("serviceWorker" in navigator && !IS_NATIVE) {
   const registerSW = () => {
     navigator.serviceWorker.register("sw.js").catch(() => { /* 単一HTML版・Artifact版では想定内 */ });
   };

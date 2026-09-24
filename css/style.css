@@ -508,6 +508,7 @@ body[data-table-theme="akane"] #screen-game {
   animation: banner-pop 0.35s cubic-bezier(0.2, 1.6, 0.4, 1);
 }
 #banner .banner-text.shu { color: var(--shu); }
+#banner.hidden { display: none; }  /* showBanner が0.9秒後に付ける。これが無いとバナーが次の表示まで残り続けていた */
 @keyframes banner-pop { from { transform: scale(0.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 
 /* 自分エリア */

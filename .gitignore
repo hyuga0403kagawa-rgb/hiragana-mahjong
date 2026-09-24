@@ -23,3 +23,6 @@ ios/App/App.xcworkspace/xcuserdata/
 ios/App/App.xcodeproj/xcuserdata/
 ios/App/Podfile.lock
 android/play-store-icon-512.png
+
+# ストア用スクショの撮影途中の素材 (tools/gen_store_screenshots.mjs が再生成する)
+brand/store-screenshots/raw/

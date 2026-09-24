@@ -71,6 +71,9 @@ cd android
 2. ストアの掲載情報を入力(下の「ストア掲載文言」を参照)
 3. アプリのアイコンは `android/play-store-icon-512.png`(512×512、ストア掲載専用。アプリ本体には同梱されない)
    フィーチャーグラフィック(必須・1024×500)は `brand/play-feature-graphic-1024x500.png`
+   スクリーンショット(スマホ用・4枚、1080×1920)は `brand/store-screenshots/01.png`〜`04.png` を順番どおりに。
+   中身は実際のゲーム画面(ストア版と同じくデモ広告なしの状態)。作り直すときはゲームサーバー起動中に
+   `node tools/gen_store_screenshots.mjs`(文言だけ直すなら `--compose-only`)
 4. プライバシーポリシーURL: `https://hiragana-mahjong.onrender.com/privacy.html`
 5. データセーフティ フォーム: 下の「データセーフティの回答」を参照
 6. コンテンツのレーティング questionnaire: 下の「年齢レーティング」を参照

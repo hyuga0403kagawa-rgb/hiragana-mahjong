@@ -12,7 +12,10 @@
   manifest検証済み(パッケージ名・INTERNET権限・targetSdk36)
 - ネイティブ判定ロジック(本番サーバーへの接続・CORS)をローカルで実機相当の条件で検証済み:
   オンライン検出 → ランク戦マッチング → 実対局進行まで一気通貫で成功
-- アイコン・スプラッシュ画面一式を全密度(Android)・1024px(iOS)で生成済み
+- アイコン・スプラッシュ画面一式を全密度(Android)・1024px(iOS)で生成済み。2026-09-24にデザインを刷新
+  (アイコン=「ひ」の牌1枚、社長が4案からB案を選択。ロゴ=「ひらがな」の牌4枚+「麻雀」)。
+  ロゴ・ストア用画像は `brand/`。作り直すときは `node tools/gen_icons.mjs` と `node tools/gen_native_icons.mjs`
+  (Edgeと Noto Serif JP フォントを使う。文字はOFLライセンスのフォントなので商用利用可)
 - 「デモ決済」UI(コイン購入・広告なし購入)はネイティブ版でのみ非表示化(実装と打ち出しの一致)
 - **デモ広告もネイティブ版では一切出さない**(起動時・対局後・「広告でコインGET」・ショップの広告行・ヘルプの広告説明。2026-09-23 社長決定)。Web版は従来どおり
 - プライバシーポリシー公開済み: **https://hiragana-mahjong.onrender.com/privacy.html**
@@ -52,18 +55,22 @@ $env:ANDROID_HOME = "$pwd\native-tools\android-sdk"
 node tools/build_www.mjs
 npx cap sync android
 cd android
-.\gradlew.bat bundleRelease `
+.\gradlew.bat --init-script ..\tools\gradle-build-outside-onedrive.gradle bundleRelease `
   -Pandroid.injected.signing.store.file="..\hiragana-mahjong-release.keystore" `
   -Pandroid.injected.signing.store.password="(さっき決めたパスワード)" `
   -Pandroid.injected.signing.key.alias="hiragana-mahjong" `
   -Pandroid.injected.signing.key.password="(さっき決めたパスワード)"
 ```
-成功すると `android/app/build/outputs/bundle/release/app-release.aab` ができる。これをPlay Consoleにアップロードする。
+成功すると **`C:\hm-build\app\outputs\bundle\release\app-release.aab`** ができる。これをPlay Consoleにアップロードする。
+- `--init-script ...` はビルドの出力先をOneDriveの外(`C:\hm-build`)に向ける指定。OneDriveの中でビルドすると
+  「not a regular file」「Unable to delete directory」で失敗するため必須(2026-09-24 確認)
+- `node tools/build_www.mjs` が EPERM で止まったら、下の「既知の制約」3 の方法で `www/` を上書きしてから続ける
 
 ### 3. Play Consoleでの出品
 1. https://play.google.com/console でアプリを新規作成(名前: ひらがな麻雀)
 2. ストアの掲載情報を入力(下の「ストア掲載文言」を参照)
 3. アプリのアイコンは `android/play-store-icon-512.png`(512×512、ストア掲載専用。アプリ本体には同梱されない)
+   フィーチャーグラフィック(必須・1024×500)は `brand/play-feature-graphic-1024x500.png`
 4. プライバシーポリシーURL: `https://hiragana-mahjong.onrender.com/privacy.html`
 5. データセーフティ フォーム: 下の「データセーフティの回答」を参照
 6. コンテンツのレーティング questionnaire: 下の「年齢レーティング」を参照

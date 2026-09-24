@@ -1,0 +1,5 @@
+// Gradleのビルド出力先をOneDriveの外 (C:/hm-build) に向ける初期化スクリプト。
+// 使い方: android フォルダで  .\gradlew.bat --init-script ..\tools\gradle-build-outside-onedrive.gradle <タスク>
+// OneDrive同期フォルダの中でビルドすると、Gradleが書いた中間ファイルをOneDriveが同期用の特殊ファイルに
+// 変えてしまい「not a regular file」「Unable to delete directory」で失敗するため (2026-09-24 確認)。
+allprojects { layout.buildDirectory = new File('C:/hm-build', project.name) }

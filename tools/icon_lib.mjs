@@ -1,195 +1,190 @@
-// アイコン/スプラッシュ描画の共有ライブラリ。外部の画像ライブラリを使わず、
-// Node標準のzlibだけでPNGを直接エンコードする(PWA・Android・iOSで共通利用)。
-// デザインはゲームの世界観(藍の卓・象牙の牌・朱のアクセント・金の縁)を踏襲した「牌」のモチーフ。
-import { deflateSync } from "node:zlib";
+// アイコン・ロゴ・スプラッシュ描画の共有ライブラリ (PWA・Android・iOS・ストア掲載で共通利用)。
+// 絵はSVGで組み立て、Microsoft Edge(またはChrome)のヘッドレスモードでPNGに書き出す。
+// 文字には Noto Serif JP (SIL Open Font License。商用・画像への埋め込み可) を使う。
+// デザインはゲームの世界観(藍の卓・象牙の牌・朱のアクセント・金の縁)を踏襲:
+//   アイコン = 「ひ」の牌1枚 (2026-09-24 社長が4案からB案を選択) / ロゴ = 「ひらがな」の牌4枚 + 「麻雀」の文字
+import { execFileSync } from "node:child_process";
+import { writeFileSync, readFileSync, mkdtempSync, rmSync, existsSync, mkdirSync, statSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { tmpdir } from "node:os";
 
 // ---- 色 (css/style.css の --ai-deep / --ai / --zouge / --kin / --shu と揃える) ----
-export const AI_DEEP = [16, 27, 44];
-export const AI = [23, 38, 59];
-export const ZOUGE_TOP = [253, 248, 234];
-export const ZOUGE_BOT = [236, 225, 200];
-export const KIN = [201, 162, 75];
-export const SHU = [201, 58, 50];
-export const SUMI = [38, 34, 28];
+export const C = {
+  aiDeep: "#0d1726",
+  ai: "#1d3150",
+  bg: "#132139",          // Android adaptive icon の背景色 (グラデーションの中間色)
+  zougeTop: "#fdf8ea",
+  zougeBot: "#e8dcc0",
+  kin: "#c9a24b",
+  shu: "#c93a32",
+  shuDeep: "#9e2a24",
+  sumi: "#26221c",
+};
 
-export function lerp(a, b, t) { return a + (b - a) * t; }
-export function mixColor(c1, c2, t) { return [lerp(c1[0], c2[0], t), lerp(c1[1], c2[1], t), lerp(c1[2], c2[2], t)]; }
+const FONT_FILE = "C:/Windows/Fonts/NotoSerifJP-VF.ttf";
+const FONT = "HMSerif";
 
-// 太さwの線分 (x0,y0)-(x1,y1) を塗る (端点は丸める)
-export function drawStroke(set, x0, y0, x1, y1, w, color) {
-  const len = Math.hypot(x1 - x0, y1 - y0);
-  const steps = Math.ceil(len * 1.5);
-  for (let i = 0; i <= steps; i++) {
-    const t = i / steps;
-    const cx = lerp(x0, x1, t), cy = lerp(y0, y1, t);
-    for (let dy = -w / 2; dy <= w / 2; dy++) {
-      for (let dx = -w / 2; dx <= w / 2; dx++) {
-        if (dx * dx + dy * dy <= (w / 2) * (w / 2)) set(Math.round(cx + dx), Math.round(cy + dy), color);
-      }
-    }
-  }
+// ---------------- パーツ ----------------
+
+// 牌1枚 (中心(cx,cy)、幅w、回転deg度)。象牙の面 + 朱の背(厚み) + 金の細い縁 + 墨の文字。
+export function tile(ch, cx, cy, w, deg, { id }) {
+  const h = w * 1.3, r = w * 0.14, depth = w * 0.075;
+  const x = -w / 2, y = -h / 2;
+  return `
+  <g transform="translate(${cx} ${cy}) rotate(${deg})" filter="url(#shadow-${id})">
+    <rect x="${x}" y="${y + depth}" width="${w}" height="${h}" rx="${r}" fill="url(#back-${id})"/>
+    <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${r}" fill="url(#face-${id})"
+          stroke="${C.kin}" stroke-opacity="0.55" stroke-width="${w * 0.012}"/>
+    <text x="0" y="${h * 0.03}" font-family="${FONT}" font-weight="900" font-size="${w * 0.72}"
+          fill="${C.sumi}" text-anchor="middle" dominant-baseline="central">${ch}</text>
+  </g>`;
 }
 
-export function roundRectMask(x, y, w, h, r) {
-  // 角丸矩形の内外判定: 内側に縮めた矩形へクランプした点との距離で四隅の円弧を判定する。
-  const x0 = x, y0 = y, x1 = x + w, y1 = y + h;
-  return (px, py) => {
-    if (px < x0 || px > x1 || py < y0 || py > y1) return false;
-    const cx = Math.min(Math.max(px, x0 + r), x1 - r);
-    const cy = Math.min(Math.max(py, y0 + r), y1 - r);
-    return Math.hypot(px - cx, py - cy) <= r;
-  };
+// 牌で使うグラデーションと影の定義。unit は影の大きさの基準 (牌の幅)。
+export function tileDefs(id, unit) {
+  return `
+    <linearGradient id="face-${id}" x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0" stop-color="${C.zougeTop}"/><stop offset="1" stop-color="${C.zougeBot}"/>
+    </linearGradient>
+    <linearGradient id="back-${id}" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="${C.shu}"/><stop offset="1" stop-color="${C.shuDeep}"/>
+    </linearGradient>
+    <filter id="shadow-${id}" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="${unit * 0.05}" stdDeviation="${unit * 0.06}" flood-color="#000" flood-opacity="0.45"/>
+    </filter>`;
 }
 
-// size: 出力ピクセル数(正方形)。
-// scale: 牌の大きさ (0〜1、キャンバス幅に対する割合)。Android adaptive iconは安全域が狭いので小さくする。
-// transparentBg: trueなら背景を透過にする (Android adaptive iconのforeground層用)。影も描かない。
-export function drawIcon(size, { scale = 0.86, transparentBg = false } = {}) {
-  const buf = new Uint8ClampedArray(size * size * 4);
-  const set = (x, y, rgb, a = 255) => {
-    if (x < 0 || y < 0 || x >= size || y >= size) return;
-    const i = (y * size + x) * 4;
-    buf[i] = rgb[0]; buf[i + 1] = rgb[1]; buf[i + 2] = rgb[2]; buf[i + 3] = a;
-  };
-
-  if (!transparentBg) {
-    // 背景: 中心やや上に藍のグラデーション (タイトル画面の雰囲気)
-    const cx = size / 2, cy = size * 0.42;
-    const maxDist = size * 0.75;
-    for (let y = 0; y < size; y++) {
-      for (let x = 0; x < size; x++) {
-        const d = Math.hypot(x - cx, y - cy) / maxDist;
-        set(x, y, mixColor(AI, AI_DEEP, Math.min(1, d)));
-      }
-    }
-  }
-
-  const tw = size * scale;
-  const th = tw * 1.32; // 牌の縦横比 (だいたい 34x48 相当)
-  const tx = (size - tw) / 2;
-  const ty = (size - th) / 2 + size * 0.02;
-  const r = tw * 0.14;
-  const inTile = roundRectMask(tx, ty, tw, th, r);
-
-  if (!transparentBg) {
-    // 牌のドロップシャドウ (下に少しオフセット、背景に対する簡易乗算)
-    const shadowOff = size * 0.012;
-    const inShadow = roundRectMask(tx, ty + shadowOff * 2.2, tw, th, r);
-    for (let y = 0; y < size; y++) {
-      for (let x = 0; x < size; x++) {
-        if (inShadow(x, y) && !inTile(x, y)) {
-          const i = (y * size + x) * 4;
-          buf[i] *= 0.7; buf[i + 1] *= 0.7; buf[i + 2] *= 0.7;
-        }
-      }
-    }
-  }
-
-  // 牌本体 (象牙のグラデーション、左上が明るく右下が暗い)
-  for (let y = ty; y < ty + th; y++) {
-    for (let x = tx; x < tx + tw; x++) {
-      if (!inTile(x, y)) continue;
-      const t = ((x - tx) / tw + (y - ty) / th) / 2;
-      set(Math.round(x), Math.round(y), mixColor(ZOUGE_TOP, ZOUGE_BOT, t));
-    }
-  }
-
-  // 金の縁 (牌の外枠に細いライン)
-  const borderW = Math.max(1, size * 0.006);
-  const inTileInner = roundRectMask(tx + borderW, ty + borderW, tw - borderW * 2, th - borderW * 2, Math.max(0, r - borderW));
-  for (let y = ty; y < ty + th; y++) {
-    for (let x = tx; x < tx + tw; x++) {
-      if (inTile(x, y) && !inTileInner(x, y)) set(Math.round(x), Math.round(y), KIN);
-    }
-  }
-
-  // 朱の点 (タイトルロゴ・レア牌と同じモチーフ) を牌の上部中央に配置
-  const dotR = tw * 0.1;
-  const dotCx = tx + tw / 2, dotCy = ty + th * 0.26;
-  for (let y = dotCy - dotR; y <= dotCy + dotR; y++) {
-    for (let x = dotCx - dotR; x <= dotCx + dotR; x++) {
-      if (Math.hypot(x - dotCx, y - dotCy) <= dotR) set(Math.round(x), Math.round(y), SHU);
-    }
-  }
-
-  // 「人」を思わせる二画の筆致 (墨色、牌の下半分) — 特定の字ではなく抽象的な文字らしさを持たせる
-  const strokeW = tw * 0.1;
-  const midX = tx + tw / 2, topY = ty + th * 0.52, botY = ty + th * 0.82;
-  drawStroke(set, midX, topY, tx + tw * 0.28, botY, strokeW, SUMI);
-  drawStroke(set, midX, topY, tx + tw * 0.72, botY, strokeW, SUMI);
-
-  return buf;
+// アイコンの主役: 「ひ」の牌1枚。小さく表示されても一目で読めることを優先した。
+// 1024四方の座標系で描き、scaleで縮める。
+const MARK_TILE_W = 600;
+function markGroup(scale, id) {
+  return `
+  <g transform="translate(512 512) scale(${scale}) translate(-512 -512)">
+    ${tile("ひ", 512, 492, MARK_TILE_W, 0, { id })}
+  </g>`;
 }
 
-// スプラッシュ画面: 藍の背景の中央に牌のアイコンを浮かべる。w×h任意サイズ対応。
-export function drawSplash(w, h) {
-  const buf = new Uint8ClampedArray(w * h * 4);
-  const set = (x, y, rgb, a = 255) => {
-    if (x < 0 || y < 0 || x >= w || y >= h) return;
-    const i = (y * w + x) * 4;
-    buf[i] = rgb[0]; buf[i + 1] = rgb[1]; buf[i + 2] = rgb[2]; buf[i + 3] = a;
-  };
-  const cx = w / 2, cy = h * 0.42;
-  const maxDist = Math.max(w, h) * 0.75;
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      const d = Math.hypot(x - cx, y - cy) / maxDist;
-      set(x, y, mixColor(AI, AI_DEEP, Math.min(1, d)));
-    }
-  }
-  // 中央に小さめの牌アイコンを合成 (画面の短辺の32%程度)
-  const iconSize = Math.round(Math.min(w, h) * 0.34);
-  const icon = drawIcon(iconSize, { scale: 0.86 });
-  const ox = Math.round((w - iconSize) / 2), oy = Math.round((h - iconSize) / 2);
-  for (let y = 0; y < iconSize; y++) {
-    for (let x = 0; x < iconSize; x++) {
-      const i = (y * iconSize + x) * 4;
-      const a = icon[i + 3] / 255;
-      if (a <= 0) continue;
-      const dx = ox + x, dy = oy + y;
-      if (dx < 0 || dy < 0 || dx >= w || dy >= h) continue;
-      const di = (dy * w + dx) * 4;
-      buf[di] = lerp(buf[di], icon[i], a);
-      buf[di + 1] = lerp(buf[di + 1], icon[i + 1], a);
-      buf[di + 2] = lerp(buf[di + 2], icon[i + 2], a);
-    }
-  }
-  return buf;
+export function bgRect(w, h) {
+  return `
+    <defs><radialGradient id="bg" cx="0.5" cy="0.42" r="0.75">
+      <stop offset="0" stop-color="${C.ai}"/><stop offset="1" stop-color="${C.aiDeep}"/>
+    </radialGradient></defs>
+    <rect width="${w}" height="${h}" fill="url(#bg)"/>`;
 }
 
-// ---- PNGエンコード (zlibのみ、外部依存なし) ----
-const CRC_TABLE = (() => {
-  const t = new Uint32Array(256);
-  for (let n = 0; n < 256; n++) {
-    let c = n;
-    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-    t[n] = c >>> 0;
+// ---------------- 完成品のSVG ----------------
+
+// アプリアイコン。scale=牌の大きさ (0.86=通常、0.68=マスク用の安全域内)。transparentBg=背景なし。
+export function iconSvg({ scale = 0.86, transparentBg = false } = {}) {
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="100%" height="100%">
+    <defs>${tileDefs("i", MARK_TILE_W * scale)}</defs>
+    ${transparentBg ? "" : bgRect(1024, 1024)}
+    ${markGroup(scale, "i")}
+  </svg>`;
+}
+
+// 横長ロゴ: 「ひ」「ら」「が」「な」の牌4枚 + 「麻雀」。
+// textColor: 「麻雀」の色 (暗い背景なら象牙、明るい背景なら墨)。withBg: 藍の背景つき。
+export const LOGO_W = 1760, LOGO_H = 520;
+export function logoSvg({ textColor = C.zougeTop, withBg = false } = {}) {
+  const W = LOGO_W, H = LOGO_H, tw = 230;
+  const tiles = ["ひ", "ら", "が", "な"].map((ch, i) =>
+    tile(ch, 170 + i * 255, 250 + (i % 2 ? 14 : -14), tw, i % 2 ? 4 : -4, { id: "l" })).join("");
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="100%" height="100%">
+    <defs>${tileDefs("l", tw)}</defs>
+    ${withBg ? bgRect(W, H) : ""}
+    ${tiles}
+    <text x="1420" y="255" font-family="${FONT}" font-weight="900" font-size="240" letter-spacing="12"
+          fill="${textColor}" text-anchor="middle" dominant-baseline="central">麻雀</text>
+    <rect x="1200" y="412" width="440" height="12" rx="6" fill="${C.shu}"/>
+  </svg>`;
+}
+
+// スプラッシュ: 藍の背景の中央に横長ロゴ。どの縦横比で切り抜かれても収まるよう短辺基準の大きさにする。
+// 背景は単色 (グラデーションだとPNGが1枚80万バイト近くになり、アプリが倍の大きさになるため)。
+export function splashSvg(w, h) {
+  const logoW = Math.min(w * 0.78, h * 0.9), logoH = logoW * LOGO_H / LOGO_W;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="100%" height="100%">
+    <rect width="${w}" height="${h}" fill="${C.bg}"/>
+    <svg x="${w / 2 - logoW / 2}" y="${h / 2 - logoH / 2}" width="${logoW}" height="${logoH}" viewBox="0 0 ${LOGO_W} ${LOGO_H}">
+      ${logoSvg().replace(/^<svg[^>]*>|<\/svg>\s*$/g, "")}
+    </svg>
+  </svg>`;
+}
+
+// Google Play のフィーチャーグラフィック (1024x500、ストア掲載ページ上部の横長画像)
+export function featureGraphicSvg() {
+  const W = 1024, H = 500;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="100%" height="100%">
+    ${bgRect(W, H)}
+    <svg x="92" y="110" width="840" height="${840 * LOGO_H / LOGO_W}" viewBox="0 0 ${LOGO_W} ${LOGO_H}">
+      ${logoSvg().replace(/^<svg[^>]*>|<\/svg>\s*$/g, "")}
+    </svg>
+    <text x="512" y="405" font-family="${FONT}" font-weight="600" font-size="34" letter-spacing="6"
+          fill="${C.kin}" text-anchor="middle" dominant-baseline="central">ひらがなの牌で ことばを そろえて あがろう</text>
+  </svg>`;
+}
+
+// ---------------- 書き出し ----------------
+
+function findBrowser() {
+  const candidates = [
+    process.env.BROWSER_PATH,
+    "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
+    "C:/Program Files/Microsoft/Edge/Application/msedge.exe",
+    "C:/Program Files/Google/Chrome/Application/chrome.exe",
+  ].filter(Boolean);
+  const found = candidates.find((p) => existsSync(p));
+  if (!found) throw new Error("Edge/Chromeが見つからない。環境変数 BROWSER_PATH にパスを指定してください");
+  return found;
+}
+
+let work = null;
+function workDir() {
+  if (!work) {
+    if (!existsSync(FONT_FILE)) throw new Error(`フォントが見つからない: ${FONT_FILE} (Noto Serif JP をインストールしてください)`);
+    work = mkdtempSync(join(tmpdir(), "hm-icons-"));
+    process.on("exit", () => { try { rmSync(work, { recursive: true, force: true }); } catch {} });
   }
-  return t;
-})();
-function crc32(buf) {
-  let c = 0xffffffff;
-  for (let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
-  return (c ^ 0xffffffff) >>> 0;
+  return work;
 }
-function chunk(type, data) {
-  const typeBuf = Buffer.from(type, "ascii");
-  const len = Buffer.alloc(4); len.writeUInt32BE(data.length, 0);
-  const crc = Buffer.alloc(4); crc.writeUInt32BE(crc32(Buffer.concat([typeBuf, data])), 0);
-  return Buffer.concat([len, typeBuf, data, crc]);
-}
-export function encodePNG(rgba, w, h = w) {
-  const raw = Buffer.alloc(h * (1 + w * 4));
-  for (let y = 0; y < h; y++) {
-    raw[y * (1 + w * 4)] = 0; // フィルタなし
-    for (let x = 0; x < w * 4; x++) {
-      raw[y * (1 + w * 4) + 1 + x] = rgba[y * w * 4 + x];
+
+// SVG文字列を w x h のPNGとして outPath に書き出す。transparent=true なら背景透過。
+let seq = 0;
+export function renderPng(svg, w, h, outPath, { transparent = false } = {}) {
+  const dir = workDir();
+  const html = join(dir, "page.html");
+  writeFileSync(html, `<!doctype html><html><head><meta charset="utf-8"><style>
+    @font-face { font-family: ${FONT}; src: url("file:///${FONT_FILE}"); font-weight: 200 900; }
+    html, body { margin: 0; padding: 0; overflow: hidden; background: transparent; }
+    body > svg { display: block; width: ${w}px; height: ${h}px; }
+  </style></head><body>${svg}</body></html>`, "utf8");
+  for (let attempt = 0; attempt < 2; attempt++) {
+    // 書き出しごとに別の設定フォルダを使う (前回のEdgeが残っていると、同じフォルダだと処理がそちらへ回されて何も出ないため)
+    const n = seq++;
+    const shot = join(dir, `shot-${n}.png`);
+    execFileSync(findBrowser(), [
+      "--headless=new", "--disable-gpu", "--hide-scrollbars", "--force-device-scale-factor=1",
+      `--user-data-dir=${join(dir, `profile-${n}`)}`,
+      `--default-background-color=${transparent ? "00000000" : "ffffffff"}`,
+      `--window-size=${w},${h}`, "--virtual-time-budget=3000",
+      `--screenshot=${shot}`, `file:///${html.replace(/\\/g, "/")}`,
+    ], { stdio: "ignore" });
+    // Windowsの msedge.exe は起動役のプロセスがすぐ戻り、描画は子プロセスで続くことがあるため、
+    // 画像ファイルができてサイズが落ち着くまで待つ (最大30秒)
+    const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+    let last = -1;
+    for (let i = 0; i < 300; i++) {
+      const size = existsSync(shot) ? statSync(shot).size : -1;
+      if (size > 0 && size === last) break;
+      last = size;
+      sleep(100);
+    }
+    if (existsSync(shot)) {
+      mkdirSync(dirname(outPath), { recursive: true });
+      writeFileSync(outPath, readFileSync(shot));
+      return;
     }
   }
-  const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4);
-  ihdr[8] = 8; ihdr[9] = 6; ihdr[10] = 0; ihdr[11] = 0; ihdr[12] = 0;
-  const idat = deflateSync(raw, { level: 9 });
-  const sig = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
-  return Buffer.concat([sig, chunk("IHDR", ihdr), chunk("IDAT", idat), chunk("IEND", Buffer.alloc(0))]);
+  throw new Error(`書き出し失敗: ${outPath}`);
 }

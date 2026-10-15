@@ -27,7 +27,7 @@
 | もの | 費用 | 誰が作るか |
 |---|---|---|
 | Googleアカウント → Google Play Console登録 | $25(初回のみ) | 社長 |
-| Apple ID → Apple Developer Program登録 | $99/年 | 社長 |
+| Apple ID → Apple Developer Program登録 | $99/年 | 社長(**2026-10 登録済み**・ドパブロックと同じアカウント) |
 
 ---
 
@@ -82,37 +82,54 @@ cd android
 
 ---
 
-## iOS(Mac + Xcode が必須)
+## iOS(Mac不要・Codemagicでビルド)
 
-Windowsではビルド・署名・提出のいずれもできない。自分のMac、または
-Codemagic / GitHub Actions(macOSランナー)等のクラウドMacビルドサービスが必要。
+Macは使わない。クラウドのMac(Codemagic)でビルド・署名し、App Store Connect へアップロードする。
+設定はリポジトリ直下の `codemagic.yaml`。Apple Developer Program(個人・Team ID `U55L7XT3FK`)と、
+Codemagic に登録済みの App Store Connect API キー「DopaBlock API Key」(ドパブロックで登録したもの。
+アカウント全体に効くのでそのまま使える)を流用する。Codemagic の無料枠(月500分)で足りる(1回 10〜20分の見込み)。
 
-### 1. コードをMac(またはクラウドMac環境)に用意
-```bash
-git clone https://github.com/hyuga0403kagawa-rgb/hiragana-mahjong.git
-cd hiragana-mahjong
-npm install
-node tools/build_www.mjs
-npx cap sync ios
-```
+iOS版の設定(2026-10-15): iPhone専用(iPadではiPhone版として動く。iPad用スクショ不要)・縦画面のみ・
+暗号化の申告は「独自の暗号化なし」(`ITSAppUsesNonExemptEncryption=false`)を Info.plist に記載済み。
 
-### 2. Xcodeで開いて署名・アーカイブ
-```bash
-npx cap open ios
-```
-Xcodeが開いたら:
-1. 左のプロジェクトナビゲータで「App」ターゲットを選択
-2. 「Signing & Capabilities」タブで、Apple Developer Programのチームを選択(Xcodeが自動でプロビジョニングを作る)
-3. メニューの Product → Archive でビルド
-4. Organizerウィンドウが開くので「Distribute App」→「App Store Connect」→ アップロード
+### 1. Codemagic にアプリを追加(1回だけ)
+1. https://codemagic.io/apps → 「Add application」→ GitHub の `hyuga0403kagawa-rgb/hiragana-mahjong` を選ぶ
+2. 設定方式は「codemagic.yaml」を選ぶ
+3. まず **ワークフロー `ios-compile-check`(署名なし)** を実行して、ビルドが通ることを確かめる
+   (Apple 側の登録の前でも動く)
 
-### 3. App Store Connectでの出品
-1. https://appstoreconnect.apple.com で新規Appを作成(Bundle ID: `com.hyuga0403kagawa.hiraganamahjong`)
-2. ストアの掲載情報を入力(下の「ストア掲載文言」を参照)
-3. プライバシーポリシーURL: `https://hiragana-mahjong.onrender.com/privacy.html`
-4. App Privacy(データ収集の申告): 下の「データセーフティの回答」を参照(内容はGoogleと同じ)
-5. 年齢制限(Age Rating): 下の「年齢レーティング」を参照
-6. Xcodeからアップロードしたビルドを選択して審査に提出(Appleは通常1〜3日)
+### 2. Apple 側の登録(1回だけ)
+1. **App ID を登録**: https://developer.apple.com/account/resources/identifiers →「+」→ App IDs → App
+   - Description: `Hiragana Mahjong` / Bundle ID(Explicit): `com.hyuga0403kagawa.hiraganamahjong`
+   - Capabilities は何も付けない(課金・通知・ログインなし)
+2. **配布用の証明書**: Codemagic の Team settings → Code signing identities → iOS certificates →
+   「Generate certificate」で **Apple Distribution** を作る(Macが無いので Codemagic に作らせる)
+3. **配布用のプロファイル**: Apple Developer の Profiles →「+」→ **App Store Connect**(Distribution)→
+   上の App ID と 2 の証明書を選んで作成 → Codemagic の iOS provisioning profiles で
+   「Fetch profiles」から取り込む
+4. **App Store Connect にアプリを作る**: https://appstoreconnect.apple.com → アプリ →「+」→ 新規App
+   - プラットフォーム iOS / 名前 `ひらがな麻雀`(使われていたら `ひらがな麻雀 - ことばの麻雀` など)/
+     主言語 日本語 / バンドルID 上の App ID / SKU `hiragana-mahjong`
+
+### 3. ビルドしてアップロード
+Codemagic でワークフロー **`ios-appstore`** を実行する。署名 → .ipa 作成 → App Store Connect へアップロードまで自動。
+**審査には出さない設定**(`submit_to_app_store: false`)。アップロード後 10〜30分で App Store Connect の
+「TestFlight」に出てくる。社長のiPhoneに TestFlight アプリを入れ、内部テスターとして実機で遊んで確かめる。
+ビルド番号は Codemagic の通し番号が自動で入る(同じ番号は二度とアップロードできないため)。
+
+### 4. App Store Connect で掲載情報を入れて審査に提出
+1. スクリーンショット(6.9インチ): `brand/store-screenshots/ios/01.png`〜`04.png`(1290×2796)を順番どおりに
+2. 説明文・キーワード: 下の「ストア掲載文言」(キーワードは100文字以内・カンマ区切り)
+3. サポートURL(必須): `https://hiragana-mahjong.onrender.com/support.html` **(連絡先を社長が決めてから作る・未作成)**
+4. プライバシーポリシーURL: `https://hiragana-mahjong.onrender.com/privacy.html`
+5. App Privacy: 「データを収集しない」(下の「データセーフティの回答」と同じ。ニックネームは対戦中だけ使い保存しない)
+6. 年齢制限: 下の「年齢レーティング」(質問票は全部「なし」・4+ を想定)
+7. 価格: 無料 / 配信地域: 日本(全世界でもよいが、日本語のみのゲーム)
+8. 審査メモ(App Review Information の Notes)に書く例:
+   > ログイン不要です。ひとり練習・CPU対戦はオフラインで遊べます。ランク戦・ともだち対戦は
+   > オンライン対戦サーバーに接続します(無料サーバーのため、最初の接続に30秒ほどかかることがあります)。
+   > 実際の金銭を賭ける要素や課金はありません。ゲーム内コインは遊んで貯めるだけのものです。
+9. TestFlight で確かめたビルドを選んで「審査へ提出」(Appleは通常1〜3日)
 
 ---
 
@@ -174,15 +191,15 @@ Xcodeが開いたら:
 
 | 項目 | 方針 |
 |---|---|
-| iOS | **後回し。** まずAndroidだけ出す。iOSはダウンロード数を見て再判断 |
+| iOS | ~~後回し~~ → **2026-10-15 社長指示でiOSも出す。** MacなしでCodemagicを使う(上の「iOS」) |
 | 広告 | **ストア版では出さない**(実装済み)。実広告SDK(AdMob等)は入れない |
 | 課金 | **いまは入れない。** 将来入れる前提の設計だけ下に残す |
 | サーバー | **Render無料枠のまま。** 審査に出す直前に社長が本番URLを開いて起こしておく |
 
 ## 既知の制約(社長への申し送り)
 
-1. **iOSは実機ビルド未確認。** Xcodeでの署名・実機動作確認はMacでの作業が必要。
-   コード側(www/資産・Capacitor設定・アイコン)は用意済みだが、実際にビルドが通るかはXcode環境依存。
+1. **iOSはまだ一度もビルドしていない(2026-10-15時点)。** 設定(`codemagic.yaml`・Info.plist)は用意済み。
+   最初に Codemagic の `ios-compile-check` で通ることを確かめる。通らなければその時点のログで直す。
 2. **Renderの無料枠はスリープする。** 起動直後のオンライン対戦は数十秒待つことがある。
    審査提出の直前に https://hiragana-mahjong.onrender.com を開いて起こしておく。
 3. **`tools/build_www.mjs` がOneDrive上で `www/` の削除に失敗することがある(EPERM)。**

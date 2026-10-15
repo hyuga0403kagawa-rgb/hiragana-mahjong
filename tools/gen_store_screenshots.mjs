@@ -2,7 +2,7 @@
 // 1) ゲームサーバー(npm start, 既定 http://localhost:8737)上の実際のゲームを、ストア版と同じ条件
 //    (Capacitorのネイティブ判定を模擬=デモ広告・デモ課金なし) でスマホ画面サイズにして撮影する。
 // 2) 撮影した画面をスマホの枠に入れ、上にキャッチコピーを載せた 1080x1920 の画像に仕上げる。
-// 出力: brand/store-screenshots/01〜04.png (Google Play用。9:16)
+// 出力: brand/store-screenshots/01〜04.png (Google Play用 1080x1920)、brand/store-screenshots/ios/01〜04.png (App Store用 1290x2796)
 // 画面の中身はすべて実際のゲームを操作した結果 (作り物のUIは使わない = 打ち出しと実装を一致させる)。
 import { writeFileSync, readFileSync, mkdirSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
@@ -204,11 +204,18 @@ const SLIDES = [
   { raw: "03-vs-cpu.png", title: "CPUと 気軽に対戦", sub: "つよさは3段階。ポン・カンで ことばを作る", zoom: true },
   { raw: "04-rank.png", title: "オンラインで ランク戦", sub: "G から S まで 8つのランクを 目指そう" },
 ];
-const W = 1080, H = 1920;
+// 出力サイズ。Google Play は 9:16、App Store は 6.9インチ(1290x2796)が必須
+const OUTPUTS = [
+  { dir: "", w: 1080, h: 1920, label: "Google Play" },
+  { dir: "ios", w: 1290, h: 2796, label: "App Store (6.9インチ)" },
+];
+// 絵は横幅1080の座標で描き、縦の長さだけ出力の比率に合わせる (縦長ほどスマホの枠が大きくなる)
+const W = 1080;
 const SHOT_W = 1170, SHOT_H = 2532;
 
-function slideSvg(sl, dataUri, crop) {
-  const pw = 640, ph = Math.round(pw * SHOT_H / SHOT_W), px = (W - pw) / 2, py = 455, pr = 56, bezel = 14;
+function slideSvg(sl, dataUri, crop, H) {
+  const py = 455, bottom = 70;
+  const pw = Math.round(Math.min(W * 0.78, (H - py - bottom) * SHOT_W / SHOT_H)), ph = Math.round(pw * SHOT_H / SHOT_W), px = (W - pw) / 2, pr = 56, bezel = 14;
   let zoom = "";
   if (sl.zoom && crop) {
     const zw = 1000, zh = Math.round(zw * crop.h / crop.w), zx = (W - zw) / 2, zy = Math.round(py + ph * 0.5 - zh / 2);
@@ -241,12 +248,15 @@ function slideSvg(sl, dataUri, crop) {
 
 function compose() {
   const c = existsSync(join(rawDir, "crops.json")) ? JSON.parse(readFileSync(join(rawDir, "crops.json"), "utf8")) : {};
-  SLIDES.forEach((sl, i) => {
-    const uri = "data:image/png;base64," + readFileSync(join(rawDir, sl.raw)).toString("base64");
-    const out = join(outDir, `0${i + 1}.png`);
-    renderPng(slideSvg(sl, uri, c[sl.raw]), W, H, out);
-    console.log(`generated: brand/store-screenshots/0${i + 1}.png`);
-  });
+  for (const o of OUTPUTS) {
+    const H = Math.round(W * o.h / o.w);
+    SLIDES.forEach((sl, i) => {
+      const uri = "data:image/png;base64," + readFileSync(join(rawDir, sl.raw)).toString("base64");
+      const rel = (o.dir ? o.dir + "/" : "") + `0${i + 1}.png`;
+      renderPng(slideSvg(sl, uri, c[sl.raw], H), o.w, o.h, join(outDir, rel));
+      console.log(`generated: brand/store-screenshots/${rel} (${o.label} ${o.w}x${o.h})`);
+    });
+  }
 }
 
 if (!process.argv.includes("--compose-only")) await capture();

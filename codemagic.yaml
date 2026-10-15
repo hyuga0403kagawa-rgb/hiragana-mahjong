@@ -1,0 +1,83 @@
+# Codemagic の設定 (Mac を持たずに iOS 版をビルドし、App Store Connect へ上げるため)。
+# 手順と前提は APP_RELEASE.md の「iOS」を参照。
+# App Store Connect の API キーは、ドパブロックで Codemagic に登録済みのものを使う
+# (キーは Apple のアカウント全体に効くので、アプリごとに作り直さなくてよい)。
+
+definitions:
+  scripts:
+    - &npm_ci
+      name: 依存パッケージを入れる
+      script: npm ci
+    - &build_www
+      name: アプリに同梱する Web 資産を www/ に集める
+      script: node tools/build_www.mjs
+    - &cap_sync
+      name: iOS プロジェクトへ反映
+      script: npx cap sync ios
+
+workflows:
+  # 署名なしでコンパイルだけ確かめる。Apple 側の登録(App ID・証明書)の前でも動く。
+  ios-compile-check:
+    name: iOS コンパイル確認(署名なし)
+    instance_type: mac_mini_m2 # 個人の無料枠(月500分)で使える機種
+    max_build_duration: 30
+    environment:
+      node: 22
+      xcode: latest
+    scripts:
+      - *npm_ci
+      - *build_www
+      - *cap_sync
+      - name: 署名なしでビルド
+        script: |
+          set -o pipefail
+          xcodebuild build \
+            -project ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            | tee build.log
+    artifacts:
+      - build.log
+
+  # App Store 提出用。署名して App Store Connect へアップロードする(TestFlight の内部テストで使える状態になる)。
+  # 審査への提出はしない(提出は社長が App Store Connect の画面で行う)。
+  ios-appstore:
+    name: App Store 提出用ビルド(App Store Connect へアップロード)
+    instance_type: mac_mini_m2
+    max_build_duration: 40
+    integrations:
+      app_store_connect: DopaBlock API Key # Codemagic に登録済みの API キーの名前
+    environment:
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.hyuga0403kagawa.hiraganamahjong
+      node: 22
+      xcode: latest
+    scripts:
+      - *npm_ci
+      - *build_www
+      - *cap_sync
+      - name: 署名の設定を当てる
+        script: xcode-project use-profiles
+      - name: ビルド番号を Codemagic の通し番号にする(App Store Connect は同じ番号を受け付けないため)
+        script: |
+          cd ios/App
+          agvtool new-version -all "$BUILD_NUMBER"
+      - name: ビルド(.ipa を作る)
+        script: |
+          xcode-project build-ipa \
+            --project ios/App/App.xcodeproj \
+            --scheme App
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: false # 外部テスト(Apple のベータ審査)には出さない。内部テストはアップロードだけで使える
+        submit_to_app_store: false  # 審査への提出は社長が手で行う
